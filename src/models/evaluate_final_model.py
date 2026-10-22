@@ -321,9 +321,7 @@ def main():
     print("FINAL MODEL ERROR ANALYSIS")
     print("=" * 78)
 
-    # --------------------------------------------------------
-    # Load model and feature list
-    # --------------------------------------------------------
+    # --- Load model and feature list ---
 
     model = joblib.load(MODEL_PATH)
 
@@ -344,9 +342,7 @@ def main():
         f"{len(feature_columns)}"
     )
 
-    # --------------------------------------------------------
-    # Load validation and test
-    # --------------------------------------------------------
+    # --- Load validation and test ---
 
     validation_raw = pd.read_parquet(
         VALIDATION_PATH
@@ -370,9 +366,7 @@ def main():
         "TEST - HUNGARY 2026",
     )
 
-    # --------------------------------------------------------
-    # Detailed analysis
-    # --------------------------------------------------------
+    # --- Detailed analysis ---
 
     print("\n\n")
     print("#" * 78)

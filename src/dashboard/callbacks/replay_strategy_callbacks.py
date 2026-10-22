@@ -49,8 +49,7 @@ def register_replay_strategy_callbacks(app, dataset, race_state, predictor, race
         if replay is None:
             return _empty_outputs("A replay adatai nem találhatók. Töltsd be újra a sessiont.", replay_id)
 
-        # The configured ML dataset currently contains Hungary 2026 race data only.
-        # Do not silently apply that model state to a different Grand Prix/session.
+        # The ML dataset covers Hungary 2026 only; don't apply it to other sessions.
         event_name = str(replay.get("event_name", ""))
         session_name = str(replay.get("session_name", ""))
         is_supported_race = (

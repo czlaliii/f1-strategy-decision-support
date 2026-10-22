@@ -34,8 +34,8 @@ def synthetic_telemetry_and_laps(spark):
 def test_spark_loads_raw_telemetry_with_expected_schema(spark):
     telemetry = load_telemetry(spark)
     assert {"timestamp", "driver_number", "session_key", "source", "speed"}.issubset(telemetry.columns)
-    # Creating this DataFrame verifies that the glob paths and explicit schemas
-    # are accepted without scanning the full 1.5M-record historical dataset.
+    # Building this DataFrame checks the glob paths and schemas
+    # without scanning the full 1.5M-record dataset.
     assert telemetry.schema["source"].dataType.simpleString() == "string"
 
 

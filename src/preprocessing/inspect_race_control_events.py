@@ -14,7 +14,7 @@ def main():
     print(f"Total events: {len(data)}")
     print()
 
-    # Csak az 50-60. kör környéki események
+    # Events around laps 50-60 only
     events = []
 
     for event in data:

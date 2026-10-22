@@ -26,10 +26,9 @@ class StrategyComparator:
         strategies: Sequence[Strategy],
         starting_cumulative_time: float = 0.0,
     ) -> pd.DataFrame:
-        """Return race-time summaries for strategies in their input order.
+        """Return race-time summaries in input order.
 
-        The simulator copies the supplied state for each candidate.  No result of
-        an earlier strategy is reused as input for a later one.
+        Each candidate gets its own copy of the state; no results are reused.
         """
         if not strategies:
             raise ValueError("At least one strategy is required for comparison.")

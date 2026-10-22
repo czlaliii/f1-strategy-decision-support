@@ -10,18 +10,17 @@ OUTPUT_PATH = Path("data/metadata/race_catalog.csv")
 
 YEARS = range(2023, 2027)
 
-# OpenF1 free tier miatt óvatos request rate.
+# Conservative request rate for the OpenF1 free tier.
 REQUEST_INTERVAL_SECONDS = 2.5
 
-# 429 esetén minimum ennyit várunk,
-# ha a szerver nem ad Retry-After fejlécet.
+# Minimum wait after a 429 when no Retry-After header is sent.
 RATE_LIMIT_FALLBACK_SECONDS = 65
 
 MAX_RETRIES = 5
 
 
 class OpenF1Client:
-    """Rate limitet és retry-t kezelő OpenF1 kliens."""
+    """OpenF1 client with rate limiting and retries."""
 
     def __init__(
         self,
@@ -35,7 +34,7 @@ class OpenF1Client:
         self._last_request_time = 0.0
 
     def _wait_before_request(self) -> None:
-        """Biztosítja a kérések közötti minimális várakozást."""
+        """Enforce the minimum delay between requests."""
         elapsed = time.monotonic() - self._last_request_time
 
         if elapsed < self.request_interval:
@@ -46,7 +45,7 @@ class OpenF1Client:
         endpoint: str,
         params: dict | None = None,
     ) -> list[dict]:
-        """Lekér egy OpenF1 endpointot retry + rate limit kezeléssel."""
+        """Fetch an OpenF1 endpoint with retries and rate limiting."""
 
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
 
@@ -77,21 +76,15 @@ class OpenF1Client:
                 time.sleep(wait_seconds)
                 continue
 
-            # -----------------------------------------------------
-            # SUCCESS
-            # -----------------------------------------------------
+            # --- SUCCESS ---
             if response.status_code == 200:
                 return response.json()
 
-            # -----------------------------------------------------
-            # 404
-            # -----------------------------------------------------
+            # --- 404 ---
             if response.status_code == 404:
                 response.raise_for_status()
 
-            # -----------------------------------------------------
-            # 429 - Rate limit
-            # -----------------------------------------------------
+            # --- 429 - Rate limit ---
             if response.status_code == 429:
 
                 retry_after_header = response.headers.get(
@@ -117,9 +110,7 @@ class OpenF1Client:
                 time.sleep(wait_seconds)
                 continue
 
-            # -----------------------------------------------------
-            # 5xx - Server error
-            # -----------------------------------------------------
+            # --- 5xx - Server error ---
             if 500 <= response.status_code < 600:
 
                 if attempt == MAX_RETRIES:
@@ -136,9 +127,7 @@ class OpenF1Client:
                 time.sleep(wait_seconds)
                 continue
 
-            # -----------------------------------------------------
-            # Egyéb HTTP hiba
-            # -----------------------------------------------------
+            # --- Other HTTP error ---
             response.raise_for_status()
 
         raise RuntimeError(
@@ -147,7 +136,7 @@ class OpenF1Client:
 
 
 def get_race_sessions(client: OpenF1Client) -> list[dict]:
-    """Lekéri a Race sessionöket 2023 és 2026 között."""
+    """Fetch Race sessions from 2023 to 2026."""
 
     all_sessions = []
 
@@ -168,11 +157,7 @@ def get_race_sessions(client: OpenF1Client) -> list[dict]:
 
 
 def get_meetings(client: OpenF1Client) -> dict[int, dict]:
-    """
-    Lekéri a meeting metaadatokat évenként.
-
-    A meeting_key alapján dictionary-t építünk.
-    """
+    """Fetch meeting metadata per year, keyed by meeting_key."""
 
     meetings_by_key = {}
 
@@ -200,19 +185,9 @@ def analyze_weather(
     meeting_key: int,
     session_key: int,
 ) -> tuple[bool | None, bool]:
-    """
-    Megnézi, hogy a KONKRÉT Race session alatt volt-e rainfall.
+    """Check whether rainfall occurred during this Race session.
 
-    A weather endpoint meeting_key alapján elérhető,
-    de session_key alapján is szűrhető.
-
-    Visszatérés:
-        (has_rain, weather_available)
-
-    has_rain:
-        True  -> volt rainfall a Race session alatt
-        False -> volt weather adat, de nem volt rainfall
-        None  -> nincs elérhető weather adat
+    Returns (has_rain, weather_available); has_rain is None without weather data.
     """
 
     try:
@@ -259,11 +234,9 @@ def analyze_stints(
     client: OpenF1Client,
     session_key: int,
 ) -> tuple[bool | None, bool | None, bool]:
-    """
-    Megvizsgálja a Race session stintjeit.
+    """Inspect the Race session stints.
 
-    Visszatérés:
-        (has_intermediate, has_wet, stints_available)
+    Returns (has_intermediate, has_wet, stints_available).
     """
 
     try:
@@ -311,11 +284,9 @@ def analyze_race_control(
     client: OpenF1Client,
     session_key: int,
 ) -> tuple[bool | None, bool | None, bool]:
-    """
-    Megkeresi a VSC és Safety Car eseményeket.
+    """Find VSC and Safety Car events.
 
-    Visszatérés:
-        (has_vsc, has_safety_car, race_control_available)
+    Returns (has_vsc, has_safety_car, race_control_available).
     """
 
     try:
@@ -362,9 +333,7 @@ def analyze_race_control(
             event.get("category") or ""
         ).upper()
 
-        # ---------------------------------------------------------
-        # Virtual Safety Car
-        # ---------------------------------------------------------
+        # --- Virtual Safety Car ---
         if (
             "VIRTUAL SAFETY CAR" in message
             or category == "VSC"
@@ -372,9 +341,7 @@ def analyze_race_control(
         ):
             has_vsc = True
 
-        # ---------------------------------------------------------
-        # Safety Car
-        # ---------------------------------------------------------
+        # --- Safety Car ---
         if (
             category == "SAFETYCAR"
             or "SAFETY CAR" in message
@@ -385,7 +352,7 @@ def analyze_race_control(
 
 
 def load_checkpoint() -> pd.DataFrame:
-    """Betölti az eddigi eredményeket, ha létezik checkpoint."""
+    """Load existing results from the checkpoint, if any."""
 
     if not OUTPUT_PATH.exists():
         return pd.DataFrame()
@@ -410,7 +377,7 @@ def load_checkpoint() -> pd.DataFrame:
 
 
 def save_checkpoint(df: pd.DataFrame) -> None:
-    """Elmenti az eddigi eredményeket."""
+    """Save results so far."""
 
     OUTPUT_PATH.parent.mkdir(
         parents=True,
@@ -431,10 +398,7 @@ def add_meeting_metadata(
     df: pd.DataFrame,
     meetings_by_key: dict[int, dict],
 ) -> pd.DataFrame:
-    """
-    A meeting_key alapján kiegészíti a katalógust
-    a helyes meeting metaadatokkal.
-    """
+    """Fill in catalog meeting metadata by meeting_key."""
 
     meeting_names = []
     countries = []
@@ -469,7 +433,7 @@ def add_meeting_metadata(
 def build_catalog(
     client: OpenF1Client,
 ) -> pd.DataFrame:
-    """Felépíti a teljes versenykatalógust."""
+    """Build the full race catalog."""
 
     sessions = get_race_sessions(client)
 
@@ -477,9 +441,7 @@ def build_catalog(
         f"\nFound {len(sessions)} race sessions."
     )
 
-    # ---------------------------------------------------------
-    # MEETING METAADATOK
-    # ---------------------------------------------------------
+    # --- Meeting metadata ---
 
     meetings_by_key = get_meetings(client)
 
@@ -488,9 +450,7 @@ def build_catalog(
         f"{len(meetings_by_key)} meetings."
     )
 
-    # ---------------------------------------------------------
-    # CHECKPOINT
-    # ---------------------------------------------------------
+    # --- CHECKPOINT ---
 
     catalog = load_checkpoint()
 
@@ -503,9 +463,7 @@ def build_catalog(
             .astype(int)
         )
 
-    # ---------------------------------------------------------
-    # VERSENYEK FELDOLGOZÁSA
-    # ---------------------------------------------------------
+    # --- Process races ---
 
     for index, session in enumerate(
         sessions,
@@ -520,9 +478,7 @@ def build_catalog(
             session["session_key"]
         )
 
-        # -----------------------------------------------------
-        # Már feldolgozott session
-        # -----------------------------------------------------
+        # --- Already processed session ---
 
         if session_key in completed_sessions:
             print(
@@ -535,9 +491,7 @@ def build_catalog(
 
             continue
 
-        # -----------------------------------------------------
-        # MEETING METAADAT
-        # -----------------------------------------------------
+        # --- Meeting metadata ---
 
         meeting = meetings_by_key.get(
             meeting_key,
@@ -563,12 +517,7 @@ def build_catalog(
             f"{circuit_short_name}"
         )
 
-        # -----------------------------------------------------
-        # WEATHER
-        #
-        # FONTOS:
-        # Most már a konkrét RACE SESSION-re szűrünk.
-        # -----------------------------------------------------
+        # --- Weather (filtered to the race session) ---
 
         has_rain, weather_available = analyze_weather(
             client,
@@ -576,9 +525,7 @@ def build_catalog(
             session_key,
         )
 
-        # -----------------------------------------------------
-        # RACE CONTROL
-        # -----------------------------------------------------
+        # --- RACE CONTROL ---
 
         (
             has_vsc,
@@ -618,9 +565,7 @@ def build_catalog(
 
         new_row_df = pd.DataFrame([row])
 
-        # -----------------------------------------------------
-        # ÚJ SOR HOZZÁADÁSA
-        # -----------------------------------------------------
+        # --- Add new row ---
 
         if catalog.empty:
             catalog = new_row_df
@@ -637,9 +582,7 @@ def build_catalog(
             session_key
         )
 
-        # -----------------------------------------------------
-        # CHECKPOINT
-        # -----------------------------------------------------
+        # --- CHECKPOINT ---
 
         save_checkpoint(catalog)
 
@@ -648,9 +591,7 @@ def build_catalog(
             f"({len(catalog)} races)."
         )
 
-    # ---------------------------------------------------------
-    # MEETING METAADATOK FRISSÍTÉSE
-    # ---------------------------------------------------------
+    # --- Update meeting metadata ---
 
     catalog = add_meeting_metadata(
         catalog,
@@ -661,7 +602,7 @@ def build_catalog(
 
 
 def print_summary(df: pd.DataFrame) -> None:
-    """Kiírja a katalógus összefoglalóját."""
+    """Print a catalog summary."""
 
     print("\n=== DONE ===")
 

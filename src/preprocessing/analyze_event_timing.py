@@ -48,9 +48,7 @@ def main():
     print("Loading race state...")
     race_state = load_race_state()
 
-    # ---------------------------------------------------------
-    # 1. Csak a releváns időszak
-    # ---------------------------------------------------------
+    # --- 1. Relevant time window only ---
 
     events = events[
         events["lap_number"].between(50, 58, inclusive="both")
@@ -72,9 +70,7 @@ def main():
             f"{event.get('message')}"
         )
 
-    # ---------------------------------------------------------
-    # 2. Jelentős pályaesemények kiválasztása
-    # ---------------------------------------------------------
+    # --- 2. Select significant track events ---
 
     important_events = events[
         events["message"]
@@ -95,13 +91,8 @@ def main():
             f"{event.get('message')}"
         )
 
-    # ---------------------------------------------------------
-    # 3. Események hozzárendelése a körökhöz
-    #
-    # Egy esemény akkor érinti az adott autó körét,
-    # ha az esemény időpontja a lap date_start és date_end
-    # időintervallumába esik.
-    # ---------------------------------------------------------
+    # --- 3. Assign events to laps ---
+    # An event affects a lap if it falls between the lap's date_start and date_end.
 
     print()
     print("=== EVENT / LAP OVERLAP ===")
@@ -152,9 +143,7 @@ def main():
                 "lap_duration": lap["lap_duration"],
             })
 
-    # ---------------------------------------------------------
-    # 4. Összefoglaló
-    # ---------------------------------------------------------
+    # --- 4. Summary ---
 
     if overlaps:
         overlap_df = pd.DataFrame(overlaps)

@@ -18,17 +18,13 @@ def main():
 
     print(f"Dataset shape: {df.shape}")
 
-    # ---------------------------------------------------------
-    # SORT DATA
-    # ---------------------------------------------------------
+    # --- SORT DATA ---
 
     df = df.sort_values(
         ["lap_number", "driver_number"]
     ).reset_index(drop=True)
 
-    # ---------------------------------------------------------
-    # TRAIN DATA
-    # ---------------------------------------------------------
+    # --- TRAIN DATA ---
 
     train_df = df[
         df["lap_number"] <= TRAIN_LAST_LAP
@@ -41,9 +37,7 @@ def main():
         f"{train_df['lap_number'].max()}"
     )
 
-    # ---------------------------------------------------------
-    # FEATURES
-    # ---------------------------------------------------------
+    # --- FEATURES ---
 
     feature_columns = [
         "driver_number",
@@ -86,9 +80,7 @@ def main():
     X_train = train_df[feature_columns]
     y_train = train_df[target_column]
 
-    # ---------------------------------------------------------
-    # FEATURE TYPES
-    # ---------------------------------------------------------
+    # --- FEATURE TYPES ---
 
     categorical_features = [
         "compound"
@@ -100,9 +92,7 @@ def main():
         if column not in categorical_features
     ]
 
-    # ---------------------------------------------------------
-    # PREPROCESSING
-    # ---------------------------------------------------------
+    # --- PREPROCESSING ---
 
     numerical_pipeline = Pipeline(
         steps=[
@@ -145,9 +135,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # MODEL
-    # ---------------------------------------------------------
+    # --- MODEL ---
 
     model = Pipeline(
         steps=[
@@ -162,9 +150,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # TRAIN
-    # ---------------------------------------------------------
+    # --- TRAIN ---
 
     print("\n=== TRAINING MODEL ===")
 
@@ -175,9 +161,7 @@ def main():
 
     print("Training completed.")
 
-    # ---------------------------------------------------------
-    # GET FEATURE NAMES
-    # ---------------------------------------------------------
+    # --- GET FEATURE NAMES ---
 
     fitted_preprocessor = model.named_steps[
         "preprocessor"
@@ -188,9 +172,7 @@ def main():
         .get_feature_names_out()
     )
 
-    # ---------------------------------------------------------
-    # GET COEFFICIENTS
-    # ---------------------------------------------------------
+    # --- GET COEFFICIENTS ---
 
     regressor = model.named_steps[
         "regressor"
@@ -214,9 +196,7 @@ def main():
         ascending=False
     )
 
-    # ---------------------------------------------------------
-    # RESULTS
-    # ---------------------------------------------------------
+    # --- RESULTS ---
 
     print("\n=== TOP 20 FEATURES BY ABSOLUTE COEFFICIENT ===")
 
@@ -232,9 +212,7 @@ def main():
         .to_string(index=False)
     )
 
-    # ---------------------------------------------------------
-    # POSITIVE / NEGATIVE EFFECTS
-    # ---------------------------------------------------------
+    # --- POSITIVE / NEGATIVE EFFECTS ---
 
     print("\n=== TOP 10 POSITIVE COEFFICIENTS ===")
 

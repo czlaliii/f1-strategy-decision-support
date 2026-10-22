@@ -54,9 +54,7 @@ def main() -> None:
 
     print(f"\nFull dataset: {df.shape}")
 
-    # --------------------------------------------------------------
-    # Race existence check
-    # --------------------------------------------------------------
+    # --- Race existence check ---
 
     expected_races = (
         TRAIN_RACES
@@ -77,9 +75,7 @@ def main() -> None:
             f"Missing races: {missing_races}"
         )
 
-    # --------------------------------------------------------------
-    # Temporal split
-    # --------------------------------------------------------------
+    # --- Temporal split ---
 
     train_df = df[
         df["race"].isin(TRAIN_RACES)
@@ -93,9 +89,7 @@ def main() -> None:
         df["race"].isin(TEST_RACES)
     ].copy()
 
-    # --------------------------------------------------------------
-    # Row-count validation
-    # --------------------------------------------------------------
+    # --- Row-count validation ---
 
     total_split_rows = (
         len(train_df)
@@ -108,9 +102,7 @@ def main() -> None:
             "Split does not cover exactly the full dataset."
         )
 
-    # --------------------------------------------------------------
-    # Output
-    # --------------------------------------------------------------
+    # --- Output ---
 
     train_path = (
         OUTPUT_DIR
@@ -142,9 +134,7 @@ def main() -> None:
         index=False,
     )
 
-    # --------------------------------------------------------------
-    # Summary
-    # --------------------------------------------------------------
+    # --- Summary ---
 
     print("\n" + "=" * 70)
     print("SPLIT SUMMARY")

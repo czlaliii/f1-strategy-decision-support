@@ -12,14 +12,9 @@ MAX_RETRY_SECONDS = 60.0
 
 
 class OpenF1Client:
-    """
-    Egyszerű OpenF1 API kliens.
+    """Simple OpenF1 API client.
 
-    Kezeli:
-    - rate limit (429)
-    - átmeneti szerverhibák (5xx)
-    - hálózati hibák
-    - 404 esetén nem próbálkozik újra
+    Retries 429, 5xx and network errors; does not retry 404.
     """
 
     def __init__(
@@ -35,23 +30,9 @@ class OpenF1Client:
         endpoint: str,
         params: dict | None = None,
     ) -> list:
-        """
-        Lekér egy OpenF1 endpointot.
+        """Fetch an OpenF1 endpoint.
 
-        200:
-            visszaadja a JSON választ
-
-        404:
-            azonnal HTTPError
-
-        429:
-            várakozás + retry
-
-        5xx:
-            retry
-
-        egyéb hiba:
-            azonnal HTTPError
+        429 and 5xx are retried; 404 and other errors raise HTTPError immediately.
         """
 
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
@@ -88,29 +69,18 @@ class OpenF1Client:
 
                 continue
 
-            # --------------------------------------------------
-            # SUCCESS
-            # --------------------------------------------------
+            # --- SUCCESS ---
 
             if response.status_code == 200:
                 return response.json()
 
-            # --------------------------------------------------
-            # 404
-            #
-            # Fontos:
-            # Ez nem átmeneti hiba.
-            # Például régebbi versenynél egy endpoint
-            # nem feltétlenül rendelkezik adattal.
-            # Ezért NEM retry-oljuk.
-            # --------------------------------------------------
+            # --- 404 ---
+            # Not transient (e.g. no data for an older race), so no retry.
 
             if response.status_code == 404:
                 response.raise_for_status()
 
-            # --------------------------------------------------
-            # 429 - RATE LIMIT
-            # --------------------------------------------------
+            # --- 429 - RATE LIMIT ---
 
             if response.status_code == 429:
 
@@ -146,9 +116,7 @@ class OpenF1Client:
 
                 continue
 
-            # --------------------------------------------------
-            # 5xx - SERVER ERROR
-            # --------------------------------------------------
+            # --- 5xx - SERVER ERROR ---
 
             if 500 <= response.status_code < 600:
 
@@ -173,9 +141,7 @@ class OpenF1Client:
 
                 continue
 
-            # --------------------------------------------------
-            # OTHER HTTP ERROR
-            # --------------------------------------------------
+            # --- OTHER HTTP ERROR ---
 
             response.raise_for_status()
 

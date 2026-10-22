@@ -133,8 +133,7 @@ def register_replay_callbacks(app):
                 )
                 replay_source = f"helyi OpenF1-adatok: {race_folder}"
             else:
-                # A még le nem töltött futamok és a nem Race sessionök
-                # továbbra is a meglévő FastF1 betöltőt használják.
+                # Races not downloaded yet and non-Race sessions still use the FastF1 loader.
                 replay = load_session_data(
                     year,
                     event_name,
@@ -367,7 +366,7 @@ def register_replay_callbacks(app):
             column for column in preferred_columns
             if column in driver_laps.columns
         ]
-        # A táblázatban a legutóbbi befejezett kör jelenjen meg legfelül.
+        # Show the latest completed lap first in the table.
         lap_table = (
             driver_laps[available_columns]
             .sort_values("LapNumber", ascending=False)
@@ -387,8 +386,7 @@ def register_replay_callbacks(app):
             {"name": column, "id": column}
             for column in available_columns
         ]
-        # A grafikon időrendben haladjon (balról jobbra), a táblázat viszont
-        # csökkenő körszám szerint mutatja az adatokat.
+        # Chart runs chronologically; the table is sorted by descending lap.
         chart_data = (
             driver_laps
             .dropna(subset=["LapTime"])
@@ -404,8 +402,7 @@ def register_replay_callbacks(app):
                 y_min = float(lap_times.min())
                 y_max = float(lap_times.max())
                 spread = y_max - y_min
-                # Szűk, adatokhoz igazított Y-tengely, hogy a köridők közötti
-                # különbségek jól láthatók legyenek. A padding nem vágja le az adatokat.
+                # Tight, data-fitted Y axis so lap-time differences stay visible.
                 padding = max(spread * 0.12, abs(y_min) * 0.005, 0.1)
                 chart = px.line(
                     chart_data,

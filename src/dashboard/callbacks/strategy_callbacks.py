@@ -93,7 +93,7 @@ def register_strategy_callbacks(app, dataset, race_state, predictor, race_last_l
                 (initial_state["compound"], new_compound),
             ),
         ]
-        # Alternatívák: három körrel korábban vagy később.
+        # Alternatives: pit three laps earlier or later.
         for alternative_lap in (pit_lap - 3, pit_lap + 3):
             if current_lap < alternative_lap < race_last_lap:
                 strategies.append(

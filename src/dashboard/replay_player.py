@@ -1,4 +1,4 @@
-"""F1 session replay: telemetria, idővonal, leaderboard és pálya."""
+"""F1 session replay: telemetry, timeline, leaderboard and track."""
 from pathlib import Path
 
 import fastf1
@@ -13,7 +13,7 @@ MAX_INTERPOLATION_GAP_SECONDS = 2.0
 
 
 def format_elapsed_time(seconds):
-    """Eltelt idő formázása: 01:24:35."""
+    """Format elapsed time as 01:24:35."""
     if seconds is None or pd.isna(seconds):
         return "–"
     total_seconds = max(0, int(seconds))
@@ -23,7 +23,7 @@ def format_elapsed_time(seconds):
     return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}"
 
 def format_lap_time(seconds):
-    """Köridő formázása: 83.456 -> 1:23.456."""
+    """Format lap time: 83.456 -> 1:23.456."""
     if seconds is None or pd.isna(seconds):
         return "–"
     minutes = int(seconds // 60)
@@ -31,7 +31,7 @@ def format_lap_time(seconds):
     return f"{minutes}:{remaining_seconds:06.3f}"
 
 def _seconds(value):
-    """Egy időtartam átalakítása másodpercre."""
+    """Convert a duration to seconds."""
     if value is None or pd.isna(value):
         return np.nan
     return pd.to_timedelta(
@@ -40,10 +40,9 @@ def _seconds(value):
     ).total_seconds()
 
 def _resample_driver(driver_data, timeline):
-    """
-    Egy versenyző telemetriáját közös idővonalra mintavételezi.
-    Nem interpolál két különböző kör között, és nem köt össze
-    hosszabb telemetriahiányokat.
+    """Resample one driver's telemetry onto the shared timeline.
+
+    Does not interpolate across laps or over long telemetry gaps.
     """
     sampled_parts = []
     numeric_columns = [
@@ -83,8 +82,7 @@ def _resample_driver(driver_data, timeline):
         right = np.searchsorted(times, sample_times, side="left")
         right = np.clip(right, 0, len(times) - 1)
         left = np.maximum(right - 1, 0)
-        # Csak rövid, telemetria alapján áthidalható időközöket
-        # interpolálunk.
+        # Interpolate only over short gaps.
         gaps = times[right] - times[left]
         valid = (
             (sample_times >= times[0])
@@ -114,7 +112,7 @@ def _resample_driver(driver_data, timeline):
                 times,
                 values,
             )
-        # A diszkrét értékeket a legutóbbi ismert mintából vesszük.
+        # Discrete values come from the latest known sample.
         for column in discrete_columns:
             if column not in segment.columns:
                 result[column] = np.nan
@@ -138,7 +136,7 @@ def _resample_driver(driver_data, timeline):
     )
 
 def _prepare_track_coordinates(data, x_column="X", y_column="Y"):
-    """Egységes, tiszta X/Y koordinátákat ad vissza a pályarajzoláshoz."""
+    """Return clean X/Y coordinates for drawing the track."""
     if data is None or data.empty or not {x_column, y_column}.issubset(data.columns):
         return pd.DataFrame(columns=["X", "Y"])
 
@@ -154,7 +152,7 @@ def _prepare_track_coordinates(data, x_column="X", y_column="Y"):
 
 
 def _build_fastf1_track(session, raw_telemetry):
-    """Pályavonalat készít FastF1-adatokból, tartalék forrással."""
+    """Build the track line from FastF1 data, with a fallback source."""
     try:
         fastest_lap = session.laps.pick_fastest()
         track = _prepare_track_coordinates(fastest_lap.get_telemetry())
@@ -167,16 +165,11 @@ def _build_fastf1_track(session, raw_telemetry):
 
 
 def _build_local_track(replay):
-    """Pályavonalat választ egyetlen, teljes repülő kör koordinátáiból.
+    """Pick the track line from a single complete lap.
 
-    Az 1. kör a rajtrácsról indul, a boxba be- és kihajtó körök pedig a
-    boxutcán haladnak, ezért ezek nem írják le a teljes fő pályát. A többi
-    kör közül azt választjuk, amelynek zárt körvonalában a legkisebb a
-    legnagyobb hézag két egymást követő minta között (az utolsó és az első
-    pont közötti zárószakaszt is beleértve). Így a hiányos mintavételű,
-    sérült koordinátájú vagy félbemaradt körök kiesnek.
-    Az OpenF1 x/y koordinátái nem méterben vannak, ezért abszolút
-    távolságküszöböt szándékosan nem használunk.
+    Skips lap 1 (grid start) and in/out laps (pit lane), then picks the lap
+    whose closed outline has the smallest maximum gap between samples.
+    OpenF1 x/y is not in metres, so no absolute distance thresholds are used.
     """
     candidates = []
 
@@ -191,7 +184,7 @@ def _build_local_track(replay):
             pit_out = driver_laps["is_pit_out_lap"].fillna(False).astype(bool)
         else:
             pit_out = pd.Series(False, index=driver_laps.index)
-        # A boxkiállás előtti kör (in-lap) a boxutcában ér véget.
+        # The in-lap ends in the pit lane.
         pit_in = pit_out.shift(-1, fill_value=False)
 
         for index, lap in driver_laps.iterrows():
@@ -228,27 +221,21 @@ def _build_local_track(replay):
 
     _, track = min(candidates, key=lambda candidate: candidate[0])
 
-    # A kör első és utolsó mintája között a célegyenesen egy mintavételnyi
-    # rés marad; az első pont megismétlésével a vonal zárttá válik.
+    # Repeat the first point to close the one-sample gap on the main straight.
     return pd.concat([track, track.iloc[[0]]], ignore_index=True)
 
 
 def load_session_data(year, event_name, session_name):
-    """
-    Betölti a FastF1-sessiont és előállítja a replay adatait.
-    Visszatérés:
-        {
-            "laps": körrekordok DataFrame,
-            "frames": idővonalra mintavételezett telemetria DataFrame,
-            "track": pályavonal DataFrame,
-        }
+    """Load a FastF1 session and build the replay data.
+
+    Returns a dict with "laps", "frames" (telemetry on the timeline) and "track".
     """
     session = fastf1.get_session(
         int(year),
         event_name,
         session_name,
     )
-    # A pozíciótelemetria betöltése is szükséges.
+    # Position telemetry is required too.
     session.load(
         laps=True,
         telemetry=True,
@@ -269,9 +256,7 @@ def load_session_data(year, event_name, session_name):
         raise ValueError(
             "Ehhez a sessionhöz nem érhető el köradat."
         )
-    # ----------------------------------------------
-    # Köradatok előkészítése
-    # ----------------------------------------------
+    # --- Prepare lap data ---
     lap_columns = [
         "Driver",
         "DriverNumber",
@@ -307,15 +292,13 @@ def load_session_data(year, event_name, session_name):
             ).dt.total_seconds()
     laps = laps.dropna(subset=["Driver", "LapNumber"])
     laps["LapNumber"] = laps["LapNumber"].astype(int)
-    # ----------------------------------------------
-    # Telemetria betöltése körönként
-    # ----------------------------------------------
+    # --- Load telemetry per lap ---
     telemetry_parts = []
     for _, lap in session.laps.iterlaps():
         try:
             telemetry = lap.get_telemetry()
         except (KeyError, ValueError, AttributeError):
-            # Egyes körökhöz hiányozhat a pozíciótelemetria.
+            # Some laps may lack position telemetry.
             continue
         if telemetry is None or telemetry.empty:
             continue
@@ -384,12 +367,12 @@ def load_session_data(year, event_name, session_name):
     raw_telemetry = raw_telemetry.sort_values(
         "TimeSeconds"
     ).reset_index(drop=True)
-    # Egységes, nulláról induló idővonal.
+    # Shared timeline starting at zero.
     time_origin = float(
         raw_telemetry["TimeSeconds"].min()
     )
     raw_telemetry["TimeSeconds"] -= time_origin
-    # A körrekordok időpontját ugyanahhoz az idővonalhoz igazítjuk.
+    # Align lap timestamps to the same timeline.
     for column in ["Time", "LapStartTime"]:
         if column in laps.columns:
             laps[column] -= time_origin
@@ -399,9 +382,7 @@ def load_session_data(year, event_name, session_name):
         laps["TimeSeconds"] = np.nan
     if "LapStartTime" in laps.columns:
         laps["LapStartSeconds"] = laps["LapStartTime"]
-    # ----------------------------------------------
-    # Közös idővonal létrehozása
-    # ----------------------------------------------
+    # --- Build shared timeline ---
     duration = float(
         raw_telemetry["TimeSeconds"].max()
     )
@@ -427,8 +408,7 @@ def load_session_data(year, event_name, session_name):
         .sort_values(["TimeSeconds", "Driver"])
         .reset_index(drop=True)
     )
-    # A pályavonal felépítése külön függvényben van, így a
-    # koordináták tisztítása nem keveredik a session feldolgozásával.
+    # Track building lives in its own function.
     track = _build_fastf1_track(session, raw_telemetry)
     return {
         "laps": laps,
@@ -440,11 +420,10 @@ def load_local_session_data(
     race_name="australia_2025",
     session_key=9693,
 ):
-    """Helyi OpenF1-adatok átalakítása a replay által használt formátumra.
+    """Convert local OpenF1 data into the replay format.
 
-    Ha a session_key nincs megadva, a helyi drivers.json/laps.json fájlokból
-    választjuk ki a futam sessionjét. Így a letöltött adatokat nem kell újra
-    külső API-ról lekérni.
+    Without a session_key, the race session is picked from the local
+    drivers.json/laps.json, so no API calls are needed.
     """
     if session_key is None:
         data_dir = Path(__file__).resolve().parents[2] / "data" / "raw" / race_name
@@ -496,13 +475,10 @@ def load_local_session_data(
     for number, driver in replay.drivers.items():
         driver_name = driver.get("name_acronym", str(number))
         location_df = replay.locations.get(number)
-        # --------------------------------------------------
-        # Autópozíciók előállítása közös idővonalon
-        # --------------------------------------------------
+        # --- Car positions on the shared timeline ---
         if location_df is not None and not location_df.empty:
             location = location_df.copy().sort_values("date")
-            # A verseny kezdeténél legfeljebb 2 másodperccel
-            # korábbi koordinátát is felhasználhatunk.
+            # Allow coordinates up to 2 s before the race start.
             location = location.loc[
                 (location["date"] >= replay.start_time
                  - pd.Timedelta(seconds=2))
@@ -586,8 +562,7 @@ def load_local_session_data(
                         "Distance": np.nan,
                     })
                 sampled["Driver"] = driver_name
-                # A körszámot a legutóbb megkezdett körből
-                # határozzuk meg.
+                # Lap number = latest started lap.
                 driver_laps = replay.laps.get(number)
                 if driver_laps is not None and not driver_laps.empty:
                     lap_starts = driver_laps["date_start"]
@@ -614,8 +589,7 @@ def load_local_session_data(
                     )
                 else:
                     sampled["LapNumber"] = np.nan
-                # Ezeket az adatokat a helyi pozíciófájlok
-                # önmagukban nem tartalmazzák.
+                # Not available in the local location files.
                 for column in [
                     "Speed",
                     "Compound",
@@ -637,9 +611,7 @@ def load_local_session_data(
                 if not sampled.empty:
                     frame_parts.append(sampled)
                     print(f"{driver_name}: frame_parts elemek={len(frame_parts)}")
-        # --------------------------------------------------
-        # Köradatok átalakítása
-        # --------------------------------------------------
+        # --- Convert lap data ---
         driver_laps = replay.laps.get(number)
         if driver_laps is not None and not driver_laps.empty:
             laps = driver_laps.copy()
@@ -706,8 +678,7 @@ def load_local_session_data(
         if laps_parts
         else pd.DataFrame()
     )
-    # A pályát nem az első elfogadható körből vesszük: az összes
-    # elérhető kör közül a legtöbb érvényes koordinátát tartalmazót választjuk.
+    # Track line from the cleanest full lap (see _build_local_track).
     track = _build_local_track(replay)
     return {
         "laps": laps,
@@ -716,7 +687,7 @@ def load_local_session_data(
     }
 
 def build_current_snapshot(frames_by_driver, current_time_seconds):
-    """Az aktuális időponthoz tartozó állapot versenyzőnként."""
+    """Per-driver state at the current time."""
     rows = []
     current_time = float(current_time_seconds)
     for driver_frames in frames_by_driver.values():
@@ -737,10 +708,10 @@ def build_current_snapshot(frames_by_driver, current_time_seconds):
     return pd.DataFrame(rows).reset_index(drop=True)
 
 def build_leaderboard(current_frames, laps, current_time_seconds):
-    """
-    Leaderboard készítése a lejátszás pillanatnyi állapotából.
-    A sorrendet a körszám, majd a körön belüli megtett
-    távolság alapján becsüljük. Ez nem hivatalos FIA-eredmény.
+    """Build the leaderboard from the current replay state.
+
+    Order is estimated from lap number, then distance within the lap;
+    not an official FIA result.
     """
     columns = [
         "Position",
@@ -774,7 +745,7 @@ def build_leaderboard(current_frames, laps, current_time_seconds):
         ascending=[False, False],
     ).reset_index(drop=True)
     latest["Position"] = np.arange(1, len(latest) + 1)
-    # Utolsó befejezett köridő versenyzőnként.
+    # Last completed lap time per driver.
     if (
         laps is not None
         and not laps.empty
@@ -804,9 +775,7 @@ def build_leaderboard(current_frames, laps, current_time_seconds):
         format_lap_time
     )
     latest["Interval"] = "–"
-    # Az intervallum első, egyszerű becslése: a megtett
-    # távolságkülönbség osztva a követő autó sebességével.
-    # Nem hivatalos időmérés, és körhatáron pontatlan lehet.
+    # Rough interval: distance gap / following car's speed. Unofficial; inaccurate at lap boundaries.
     for index in range(1, len(latest)):
         leader = latest.iloc[index - 1]
         driver_row = latest.iloc[index]
@@ -834,7 +803,7 @@ def build_leaderboard(current_frames, laps, current_time_seconds):
     return result[columns].reset_index(drop=True)
 
 def build_track_figure(current_frames, track, current_time_seconds):
-    """Pályavonal és az aktuális autópozíciók Plotly-ábrája."""
+    """Plotly figure of the track line and current car positions."""
     figure = go.Figure()
     if track is not None and not track.empty:
         figure.add_trace(

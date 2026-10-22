@@ -14,7 +14,7 @@ PIT_PATH = None
 OUTPUT_PATH = None
 
 def create_spark_session() -> SparkSession:
-    """Létrehozza a helyi SparkSessiont."""
+    """Create the local SparkSession."""
 
     return (
         SparkSession.builder
@@ -28,7 +28,7 @@ def load_json(
     spark: SparkSession,
     filepath: Path,
 ):
-    """JSON fájl betöltése Spark DataFrame-be."""
+    """Load a JSON file into a Spark DataFrame."""
 
     return (
         spark.read
@@ -38,21 +38,7 @@ def load_json(
 
 
 def build_stint_mapping(stints):
-    """
-    Egy stintből driver/lap szintű mapping készítése.
-
-    Például:
-
-    lap_start = 20
-    lap_end = 23
-
-    →
-
-    20
-    21
-    22
-    23
-    """
+    """Expand a stint into one row per driver/lap (e.g. laps 20-23 -> 20, 21, 22, 23)."""
 
     return (
         stints
@@ -96,11 +82,9 @@ def build_lap_data(
     stints,
     pit,
 ):
-    """A pandasos build_lap_data Spark megfelelője."""
+    """Spark equivalent of the pandas build_lap_data."""
 
-    # ---------------------------------------------------------
-    # STINT MAPPING
-    # ---------------------------------------------------------
+    # --- STINT MAPPING ---
 
     stint_mapping = build_stint_mapping(stints)
 
@@ -121,9 +105,7 @@ def build_lap_data(
         .drop("_stint_rank")
     )
 
-    # ---------------------------------------------------------
-    # LAP + STINT
-    # ---------------------------------------------------------
+    # --- LAP + STINT ---
 
     lap_data = laps.join(
         stint_mapping,
@@ -134,9 +116,7 @@ def build_lap_data(
         how="left",
     )
 
-    # ---------------------------------------------------------
-    # PIT STOP FLAG
-    # ---------------------------------------------------------
+    # --- PIT STOP FLAG ---
 
     if "driver_number" in pit.columns and "lap_number" in pit.columns:
 
@@ -154,8 +134,7 @@ def build_lap_data(
         )
 
     else:
-        # Ha nincs pit adat, létrehozunk egy üres,
-        # de megfelelő sémájú DataFrame-et.
+        # Without pit data, create an empty DataFrame with the right schema.
         pit_flags = (
             laps
             .select(
@@ -188,9 +167,7 @@ def build_lap_data(
         )
     )
 
-    # ---------------------------------------------------------
-    # SORT
-    # ---------------------------------------------------------
+    # --- SORT ---
 
     lap_data = lap_data.orderBy(
         "driver_number",
@@ -243,9 +220,7 @@ def main() -> None:
         print(f"Stints: {stints.count()}")
         print(f"Pit stops: {pit.count()}")
 
-        # -----------------------------------------------------
-        # SCHEMAS
-        # -----------------------------------------------------
+        # --- SCHEMAS ---
 
         print("\n=== LAPS SCHEMA ===")
         laps.printSchema()
@@ -256,9 +231,7 @@ def main() -> None:
         print("\n=== PIT SCHEMA ===")
         pit.printSchema()
 
-        # -----------------------------------------------------
-        # PROCESSING
-        # -----------------------------------------------------
+        # --- PROCESSING ---
 
         print("\nBuilding lap data...")
 
@@ -268,7 +241,7 @@ def main() -> None:
             pit=pit,
         )
 
-        # Cache, mert többször használjuk.
+        # Cached because it is reused.
         lap_data.cache()
 
         row_count = lap_data.count()
@@ -294,9 +267,7 @@ def main() -> None:
             f"Columns: {len(lap_data.columns)}"
         )
 
-        # -----------------------------------------------------
-        # SAVE
-        # -----------------------------------------------------
+        # --- SAVE ---
 
         OUTPUT_DIR.mkdir(
             parents=True,

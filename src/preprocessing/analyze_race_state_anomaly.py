@@ -11,12 +11,12 @@ def main():
 
     race_state = pd.read_parquet(RACE_STATE_FILE)
 
-    # Csak az érdekes körök
+    # Laps of interest only
     data = race_state[
         race_state["lap_number"].between(53, 58)
     ].copy()
 
-    # Érintett / lassú körök
+    # Affected / slow laps
     data["slow_lap"] = data["lap_duration"] > 95
 
     print("\n=== SLOW LAPS (>95s) ===")

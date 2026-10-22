@@ -25,10 +25,7 @@ def main():
     ).reset_index(drop=True)
 
     # 2. PREVIOUS LAP TIME
-    #
-    # Az előző kör tényleges ideje.
-    # A jelenlegi köridőt nem használjuk itt,
-    # mert az lenne a célváltozó szempontjából leakage.
+    # Only the previous lap; the current lap time would leak the target.
 
     df["previous_lap_time"] = (
         df.groupby("driver_number")["lap_duration"]
@@ -37,7 +34,7 @@ def main():
 
     # 3. ROLLING LAP TIME
 
-    # Csak korábbi körökből számolunk.
+    # Only past laps are used.
 
     df["rolling_3_lap_avg"] = (
         df.groupby("driver_number")["lap_duration"]
@@ -61,7 +58,7 @@ def main():
 
     # 4. LAP TIME DELTA
 
-    # Az előző kör és az azt megelőző kör közötti változás.
+    # Change between the previous two laps.
 
     df["lap_time_delta"] = (
         df["previous_lap_time"]
@@ -72,7 +69,7 @@ def main():
 
     # 5. POSITION CHANGE
 
-    # Pozícióváltozás az előző körhöz képest.
+    # Position change versus the previous lap.
 
     df["position_change"] = (
         df.groupby("driver_number")["position"]
@@ -80,9 +77,7 @@ def main():
         - df["position"]
     )
 
-    # Pozitív érték = előrelépés
-    # Negatív érték = visszaesés
-    # 0 = pozíció megtartása
+    # Positive = gained places, negative = lost, 0 = held.
 
     # 6. GAP CHANGE
 
@@ -97,8 +92,7 @@ def main():
         - previous_gap
     )
 
-    # Negatív érték = közelebb került a vezetőhöz
-    # Pozitív érték = távolodott a vezetőtől
+    # Negative = closer to the leader, positive = further away.
 
     # 7. INTERVAL CHANGE
 
@@ -113,8 +107,7 @@ def main():
         - previous_interval
     )
 
-    # Negatív érték = csökkent a különbség az előtte haladóhoz
-    # Pozitív érték = nőtt a különbség
+    # Negative = gap to the car ahead shrank, positive = grew.
 
     # 8. LAPS SINCE PIT STOP
 
@@ -135,9 +128,7 @@ def main():
         - df["last_pit_lap"]
     )
 
-    # A verseny első stintjében nincs korábbi pit stop.
-    # Ezeknél a gumi kora ad jobb információt,
-    # ezért a hiányzó értéket nem töltjük ki mesterségesen.
+    # No earlier pit stop in the first stint; left as NaN (tyre age covers it).
 
     # 9. TRACK / AIR TEMPERATURE DIFFERENCE
 
@@ -147,14 +138,7 @@ def main():
     )
 
     # 10. TARGET: NEXT LAP TIME
-    #
-    # A modell célváltozója:
-    #
-    # "Mennyi lesz a következő kör ideje?"
-    #
-    # Ezért a következő kör lap_duration értékét
-    # visszatoljuk az aktuális Race State sorhoz.
-    #
+    # Shift the next lap's lap_duration back onto the current row.
 
     df["next_lap_time"] = (
         df.groupby("driver_number")["lap_duration"]

@@ -35,16 +35,8 @@ KEY_COLUMNS = [
 ]
 
 
-# A combined context metadata oszlopai.
-# Ezeket nem használjuk ML feature-ként:
-# - race
-# - year
-# - event
-# - driver
-# - driver_number
-# - full_name
-#
-# A team viszont használható feature-ként.
+# Combined-context metadata columns, not used as ML features:
+# race, year, event, driver, driver_number, full_name. team is a feature.
 CONTEXT_METADATA_COLUMNS = {
     "race",
     "year",
@@ -68,9 +60,7 @@ def main() -> None:
 
     spark.sparkContext.setLogLevel("WARN")
 
-    # ------------------------------------------------------------------
-    # 1. Load base ML dataset
-    # ------------------------------------------------------------------
+    # --- 1. Load base ML dataset ---
 
     print("\nLoading base ML dataset...")
     print(f"Path: {ML_DATASET_PATH}")
@@ -85,9 +75,7 @@ def main() -> None:
     print(f"Rows:    {ml.count()}")
     print(f"Columns: {len(ml.columns)}")
 
-    # ------------------------------------------------------------------
-    # 2. Load combined context
-    # ------------------------------------------------------------------
+    # --- 2. Load combined context ---
 
     print("\nLoading combined race context...")
     print(f"Path: {CONTEXT_PATH}")
@@ -107,9 +95,7 @@ def main() -> None:
     print(f"Rows:    {context.count()}")
     print(f"Columns: {len(context.columns)}")
 
-    # ------------------------------------------------------------------
-    # 3. Normalize join keys
-    # ------------------------------------------------------------------
+    # --- 3. Normalize join keys ---
 
     ml = ml.withColumn(
         "driver_number",
@@ -126,9 +112,7 @@ def main() -> None:
         F.col("race").cast("string")
     )
 
-    # ------------------------------------------------------------------
-    # 4. Validate required columns
-    # ------------------------------------------------------------------
+    # --- 4. Validate required columns ---
 
     for column in KEY_COLUMNS:
         if column not in ml.columns:
@@ -141,9 +125,7 @@ def main() -> None:
                 f"Missing key column from context: {column}"
             )
 
-    # ------------------------------------------------------------------
-    # 5. Context duplicate validation
-    # ------------------------------------------------------------------
+    # --- 5. Context duplicate validation ---
 
     context_duplicates = (
         context
@@ -164,9 +146,7 @@ def main() -> None:
 
     print("✅ No race + driver_number duplicates in context.")
 
-    # ------------------------------------------------------------------
-    # 6. Check ML keys against context
-    # ------------------------------------------------------------------
+    # --- 6. Check ML keys against context ---
 
     ml_keys = (
         ml
@@ -215,9 +195,7 @@ def main() -> None:
 
     print("✅ Every ML key has matching context.")
 
-    # ------------------------------------------------------------------
-    # 7. Select only context columns that can become features
-    # ------------------------------------------------------------------
+    # --- 7. Select only context columns that can become features ---
 
     context_feature_columns = [
         column
@@ -239,9 +217,7 @@ def main() -> None:
         *context_feature_columns,
     )
 
-    # ------------------------------------------------------------------
-    # 8. Join
-    # ------------------------------------------------------------------
+    # --- 8. Join ---
 
     print("\n--- JOIN ---")
 
@@ -269,9 +245,7 @@ def main() -> None:
 
     print("✅ Join preserved row count.")
 
-    # ------------------------------------------------------------------
-    # 9. Context completeness check
-    # ------------------------------------------------------------------
+    # --- 9. Context completeness check ---
 
     print("\n--- CONTEXT COMPLETENESS ---")
 
@@ -288,9 +262,7 @@ def main() -> None:
                 "Some joined rows have missing team values."
             )
 
-    # ------------------------------------------------------------------
-    # 10. Final summary
-    # ------------------------------------------------------------------
+    # --- 10. Final summary ---
 
     print("\n" + "=" * 78)
     print("FINAL DATASET")

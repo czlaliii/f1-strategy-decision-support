@@ -69,8 +69,7 @@ FEATURES = BASE_FEATURES + MISSING_FEATURES + PRACTICE_FEATURES + SC_FEATURES
 def load_data(path):
     df = pd.read_parquet(path)
 
-    # A context datasetből hiányzó missing-indicator oszlopok
-    # létrehozása az eredeti oszlopok alapján.
+    # Recreate missing-indicator columns absent from the context dataset.
     missing_indicator_sources = {
         "position_missing": "position",
         "interval_missing": "interval",
@@ -107,8 +106,7 @@ def load_data(path):
 
 
 def build_model(train_df):
-    # Azokat a feature-öket elhagyjuk, amelyek a tanítóhalmazon
-    # teljes egészében hiányoznak.
+    # Drop features that are entirely missing in the training set.
     features = [
         c for c in FEATURES
         if not train_df[c].isna().all()
@@ -165,21 +163,20 @@ def build_model(train_df):
 def add_sc_phase(df):
     df = df.copy()
 
-    # Az SC-jellemzők legyenek numerikusak.
+    # Make SC features numeric.
     for col in SC_FEATURES:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # SC-vel érintett kör.
+    # Lap affected by SC.
     affected = (
         (df["sc_in_lap"] > 0)
         | (df["sc_duration_in_lap"] > 0)
     )
 
-    # SC alatt a kör végén is aktív volt.
+    # SC still active at lap end.
     active_at_end = df["sc_active_at_end"] > 0
 
-    # Az előző kör végén még aktív volt az SC,
-    # a jelenlegi körben viszont már nem érintett.
+    # SC active at the end of the previous lap but not in this one.
     df = df.sort_values(
         ["race_id", "driver_number", "lap_number"]
         if "race_id" in df.columns
@@ -231,8 +228,7 @@ def inspect_lap_alignment(df, label):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # A következő sor köridője ugyanahhoz a versenyzőhöz
-    # és versenyhez tartozzon.
+    # Next row must belong to the same driver and race.
     df = df.sort_values(
         ["race", "driver_number", "lap_number"]
     )
@@ -258,7 +254,7 @@ def inspect_lap_alignment(df, label):
         print("Legfeljebb 0,01 s eltérésű sorok:",
               int(valid.abs().le(0.01).sum()), "/", len(valid))
 
-    # Silverstone 2025, a problémás körök környezete
+    # Silverstone 2025: laps around the problem area
     silverstone = df[
         (df["race"] == "silverstone_2025")
         & df["lap_number"].between(13, 22)
@@ -453,7 +449,7 @@ def main():
     print(summary.to_string())
 
     
-    # Részletes diagnosztika az SC alatt nagyot tévedett körökre.
+    # Detailed diagnostics for large errors under SC.
     sc_rows = val_df[
         val_df["sc_active_at_end"].gt(0)
     ].copy()
@@ -462,7 +458,7 @@ def main():
         sc_rows["predicted"] - sc_rows["actual"]
     ).abs()
 
-    # Azonosítsuk a versenyt, ha az elérhető az adatokban.
+    # Identify the race if available.
     race_col = next(
         (
             col for col in ("race_id", "race_name", "race", "meeting_key")

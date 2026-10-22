@@ -4,7 +4,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 DATA_PATH = "data/processed/hungary_2026/ml_dataset_clean.parquet"
 
-# A verseny időbeli felosztása
+# Chronological race split
 TRAIN_LAST_LAP = 50
 
 
@@ -15,14 +15,12 @@ def main():
 
     print(f"Dataset shape: {df.shape}")
 
-    # Időrend biztosítása
+    # Ensure chronological order
     df = df.sort_values(
         ["lap_number", "driver_number"]
     ).reset_index(drop=True)
 
-    # ---------------------------------------------------------
-    # TRAIN / VALIDATION SPLIT
-    # ---------------------------------------------------------
+    # --- TRAIN / VALIDATION SPLIT ---
 
     train_df = df[
         df["lap_number"] <= TRAIN_LAST_LAP
@@ -48,24 +46,14 @@ def main():
         f"{validation_df['lap_number'].max()}"
     )
 
-    # ---------------------------------------------------------
-    # BASELINE
-    # ---------------------------------------------------------
-    #
-    # A következő kör idejét egyszerűen az előző kör idejével
-    # becsüljük.
-    #
-    # prediction = previous_lap_time
-    # target     = next_lap_time
-    #
+    # --- BASELINE ---
+    # Predict the next lap time as the previous lap time.
 
     validation_df = validation_df.dropna(
         subset=["previous_lap_time", "next_lap_time"]
     ).copy()
 
-    # ---------------------------------------------------------
-    # BASELINE 1 - PREVIOUS LAP
-    # ---------------------------------------------------------
+    # --- BASELINE 1 - PREVIOUS LAP ---
 
     previous_lap_df = validation_df.dropna(
         subset=["previous_lap_time", "next_lap_time"]
@@ -91,9 +79,7 @@ def main():
         y_pred_previous
     )
 
-    # ---------------------------------------------------------
-    # BASELINE 2 - ROLLING 3 LAP AVERAGE
-    # ---------------------------------------------------------
+    # --- BASELINE 2 - ROLLING 3 LAP AVERAGE ---
 
     rolling_df = validation_df.dropna(
         subset=["rolling_3_lap_avg", "next_lap_time"]
@@ -119,9 +105,7 @@ def main():
         y_pred_rolling
     )
 
-    # ---------------------------------------------------------
-    # RESULTS
-    # ---------------------------------------------------------
+    # --- RESULTS ---
 
     print("\n=== BASELINE RESULTS ===")
 

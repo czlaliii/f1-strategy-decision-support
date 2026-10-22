@@ -19,17 +19,13 @@ def main():
 
     print(f"Dataset shape: {df.shape}")
 
-    # ---------------------------------------------------------
-    # SORT DATA
-    # ---------------------------------------------------------
+    # --- SORT DATA ---
 
     df = df.sort_values(
         ["lap_number", "driver_number"]
     ).reset_index(drop=True)
 
-    # ---------------------------------------------------------
-    # TRAIN / VALIDATION SPLIT
-    # ---------------------------------------------------------
+    # --- TRAIN / VALIDATION SPLIT ---
 
     train_df = df[
         df["lap_number"] <= TRAIN_LAST_LAP
@@ -56,9 +52,7 @@ def main():
         f"{validation_df['lap_number'].max()}"
     )
 
-    # ---------------------------------------------------------
-    # FEATURES
-    # ---------------------------------------------------------
+    # --- FEATURES ---
 
     feature_columns = [
         "driver_number",
@@ -102,9 +96,7 @@ def main():
     X_validation = validation_df[feature_columns]
     y_validation = validation_df[target_column]
 
-    # ---------------------------------------------------------
-    # FEATURE TYPES
-    # ---------------------------------------------------------
+    # --- FEATURE TYPES ---
 
     categorical_features = [
         "compound"
@@ -116,9 +108,7 @@ def main():
         if column not in categorical_features
     ]
 
-    # ---------------------------------------------------------
-    # PREPROCESSING
-    # ---------------------------------------------------------
+    # --- PREPROCESSING ---
 
     numerical_pipeline = Pipeline(
         steps=[
@@ -162,9 +152,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # MODEL
-    # ---------------------------------------------------------
+    # --- MODEL ---
 
     model = Pipeline(
         steps=[
@@ -185,9 +173,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # TRAIN
-    # ---------------------------------------------------------
+    # --- TRAIN ---
 
     print("\n=== TRAINING ===")
 
@@ -200,17 +186,13 @@ def main():
         "Gradient Boosting training completed."
     )
 
-    # ---------------------------------------------------------
-    # PREDICTION
-    # ---------------------------------------------------------
+    # --- PREDICTION ---
 
     y_pred = model.predict(
         X_validation
     )
 
-    # ---------------------------------------------------------
-    # METRICS
-    # ---------------------------------------------------------
+    # --- METRICS ---
 
     mae = mean_absolute_error(
         y_validation,
@@ -229,9 +211,7 @@ def main():
         y_pred
     )
 
-    # ---------------------------------------------------------
-    # RESULTS
-    # ---------------------------------------------------------
+    # --- RESULTS ---
 
     print("\n=== GRADIENT BOOSTING RESULTS ===")
 
@@ -244,9 +224,7 @@ def main():
         f"{len(y_validation)}"
     )
 
-    # ---------------------------------------------------------
-    # COMPARISON
-    # ---------------------------------------------------------
+    # --- COMPARISON ---
 
     print("\n=== MODEL COMPARISON ===")
 

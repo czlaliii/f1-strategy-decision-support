@@ -57,16 +57,13 @@ def main():
 
     # FEATURES
 
-    # Ezeket az adatokat ismeri a rendszer az aktuális
-    # Race State időpontjában.
+    # Data known at the current race state.
 
-    # next_lap_time NEM kerül az X-be, mert ez a target.
+    # next_lap_time is the target, so it is not in X.
 
-    # A VSC feature-ök az aktuális, már befejezett kör
-    # során történt VSC eseményt írják le.
+    # VSC features describe events in the completed lap,
 
-    # Ezért ezek használhatók a következő kör
-    # idejének előrejelzéséhez.
+    # so they are valid inputs for the next-lap prediction.
 
     feature_columns = [
         "driver_number",

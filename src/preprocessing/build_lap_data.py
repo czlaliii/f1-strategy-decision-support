@@ -72,15 +72,11 @@ def main():
     print(f"Stints: {len(stints)}")
     print(f"Pit stops: {len(pit)}")
 
-    # --------------------------------------------------
-    # STINT MAPPING
-    # --------------------------------------------------
+    # --- STINT MAPPING ---
 
     stint_mapping = build_stint_mapping(stints)
 
-    # --------------------------------------------------
-    # LAP + STINT
-    # --------------------------------------------------
+    # --- LAP + STINT ---
 
     lap_data = laps.merge(
         stint_mapping,
@@ -88,9 +84,7 @@ def main():
         how="left"
     )
 
-    # --------------------------------------------------
-    # PIT STOP FLAG
-    # --------------------------------------------------
+    # --- PIT STOP FLAG ---
 
     pit_flags = (
         pit[
@@ -111,9 +105,7 @@ def main():
         .fillna(False)
     )
 
-    # --------------------------------------------------
-    # SORT
-    # --------------------------------------------------
+    # --- SORT ---
 
     lap_data = lap_data.sort_values(
         [
@@ -122,9 +114,7 @@ def main():
         ]
     ).reset_index(drop=True)
 
-    # --------------------------------------------------
-    # SAVE
-    # --------------------------------------------------
+    # --- SAVE ---
 
     OUTPUT_DIR.mkdir(
         parents=True,

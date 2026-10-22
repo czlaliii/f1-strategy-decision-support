@@ -139,13 +139,7 @@ def _require_columns(df: pd.DataFrame, required: Iterable[str], label: str) -> N
 
 
 def _ensure_missing_indicators(df: pd.DataFrame, label: str) -> pd.DataFrame:
-    """Rebuild missing-value flags if the saved split omitted them.
-
-    The context split currently may not persist the *_missing columns used by
-    the ablation experiment. Reconstruct them from the corresponding source
-    columns before model imputation, matching the intended meaning of these
-    indicators as far as the saved data allows.
-    """
+    """Rebuild *_missing flags from their source columns if the saved split omitted them."""
     source_by_indicator = {
         "position_missing": "position",
         "interval_missing": "interval",
@@ -311,12 +305,12 @@ def main() -> None:
     print("Loading training and validation splits (test split is not used)...")
     train_df = pd.read_parquet(TRAIN_PATH)
     validation_df = pd.read_parquet(VALIDATION_PATH)
-    # Preserve every validation lap for condition labeling. The final lap can
-    # have a null next_lap_time but still defines the state of a prior row's target lap.
+    # Keep every validation lap for labeling; the last lap may lack a target
+    # but still defines a target lap's state.
     validation_conditions_all = validation_df.copy()
 
-    # The current context split can omit these flags, so recreate them before
-    # feature selection and before the sklearn imputers are fitted.
+    # The context split may omit these flags; recreate them before feature
+    # selection and imputer fitting.
     train_df = _ensure_missing_indicators(train_df, "Training")
     validation_df = _ensure_missing_indicators(validation_df, "Validation")
     validation_conditions_all = _ensure_missing_indicators(
@@ -376,9 +370,7 @@ def main() -> None:
         f"R²={r2_score(y_val, sc_predictions):.3f}"
     )
 
-    # Aggregate the condition flags by lap. A lap is SC-active if at least one
-    # driver row shows SC overlap/flag; this avoids counting every driver-row
-    # as a separate Safety Car event.
+    # A lap is SC-active if any driver row shows SC, so each event counts once.
     event_df = validation_conditions_all[[LAP_COLUMN]].copy()
     event_df["sc_active_row"] = _is_active(validation_conditions_all, "sc").to_numpy()
     event_df["vsc_active_row"] = _is_active(validation_conditions_all, "vsc").to_numpy()
@@ -438,10 +430,8 @@ def main() -> None:
     if RACE_COLUMN in validation_df.columns:
         row_results.insert(0, RACE_COLUMN, validation_df[RACE_COLUMN].to_numpy())
     row_results["segment"] = row_results[LAP_COLUMN].astype(int).map(lap_to_segment)
-    # next_lap_time is the target for lap_number + 1. For diagnostic grouping
-    # only (not as a model input), label each prediction by that target lap's
-    # observed SC/VSC segment. This avoids calling lap 12 "pre-SC" if its target
-    # is the first SC-affected lap.
+    # Label each prediction by its target lap's (lap_number + 1) SC/VSC segment.
+    # Used for grouping only, not as a model input.
     row_results["target_lap_number"] = row_results[LAP_COLUMN].astype(int) + 1
     row_results["target_segment"] = row_results["target_lap_number"].map(lap_to_segment)
     row_results["baseline_prediction"] = baseline_predictions
@@ -506,8 +496,7 @@ def main() -> None:
     segment_summary = segment_summary.sort_values("segment").reset_index(drop=True)
     segment_summary["segment"] = segment_summary["segment"].astype(str)
 
-    # Primary diagnostic: summarize by the actual target lap's condition.
-    # This uses condition annotations only to group errors after prediction.
+    # Main diagnostic: errors grouped by the target lap's condition (after prediction).
     target_segment_summary = (
         row_results.dropna(subset=["target_segment"])
         .groupby("target_segment", as_index=False)

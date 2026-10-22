@@ -266,9 +266,7 @@ def main():
     print("MULTI-RACE GRADIENT BOOSTING TRAINING")
     print("=" * 70)
 
-    # ---------------------------------------------------------
-    # Load data
-    # ---------------------------------------------------------
+    # --- Load data ---
 
     train_raw = pd.read_parquet(TRAIN_PATH)
     validation_raw = pd.read_parquet(VALIDATION_PATH)
@@ -279,9 +277,7 @@ def main():
     print(f"Validation:  {validation_raw.shape}")
     print(f"Test:        {test_raw.shape}")
 
-    # ---------------------------------------------------------
-    # Prepare datasets
-    # ---------------------------------------------------------
+    # --- Prepare datasets ---
 
     train = prepare_dataset(train_raw)
     validation = prepare_dataset(validation_raw)
@@ -305,9 +301,7 @@ def main():
     print("\nFeatures:")
     print(f"Number of features: {len(feature_columns)}")
 
-    # ---------------------------------------------------------
-    # Build model
-    # ---------------------------------------------------------
+    # --- Build model ---
 
     model = build_model()
 
@@ -320,9 +314,7 @@ def main():
 
     print("Training finished.")
 
-    # ---------------------------------------------------------
-    # Evaluate
-    # ---------------------------------------------------------
+    # --- Evaluate ---
 
     validation_metrics = evaluate(
         model,
@@ -338,9 +330,7 @@ def main():
         "TEST - Gradient Boosting",
     )
 
-    # ---------------------------------------------------------
-    # Baseline
-    # ---------------------------------------------------------
+    # --- Baseline ---
 
     evaluate_previous_lap(
         validation_raw,
@@ -352,9 +342,7 @@ def main():
         "TEST",
     )
 
-    # ---------------------------------------------------------
-    # Save model
-    # ---------------------------------------------------------
+    # --- Save model ---
 
     MODEL_DIR.mkdir(
         parents=True,
@@ -371,9 +359,7 @@ def main():
     print("=" * 70)
     print(MODEL_PATH)
 
-    # ---------------------------------------------------------
-    # Final summary
-    # ---------------------------------------------------------
+    # --- Final summary ---
 
     print("\n" + "=" * 70)
     print("FINAL SUMMARY")

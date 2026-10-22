@@ -28,9 +28,7 @@ def main():
 
     print(f"\nRows with next_lap_time > 130s: {len(slow)}")
 
-    # ---------------------------------------------------------
-    # Distribution by race
-    # ---------------------------------------------------------
+    # --- Distribution by race ---
 
     print("\n" + "-" * 78)
     print("SLOW TARGETS BY RACE")
@@ -50,9 +48,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Distribution by lap
-    # ---------------------------------------------------------
+    # --- Distribution by lap ---
 
     print("\n" + "-" * 78)
     print("SLOW TARGETS BY LAP")
@@ -79,9 +75,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Pit stop / pit out
-    # ---------------------------------------------------------
+    # --- Pit stop / pit out ---
 
     print("\n" + "-" * 78)
     print("SLOW TARGETS VS PIT STATUS")
@@ -100,9 +94,7 @@ def main():
                 .to_string()
             )
 
-    # ---------------------------------------------------------
-    # Current lap vs target lap
-    # ---------------------------------------------------------
+    # --- Current lap vs target lap ---
 
     print("\n" + "-" * 78)
     print("CURRENT LAP TIME VS NEXT LAP TIME")
@@ -146,9 +138,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Difference between current and next lap
-    # ---------------------------------------------------------
+    # --- Difference between current and next lap ---
 
     print("\n" + "-" * 78)
     print("CURRENT → NEXT LAP TIME CHANGE")
@@ -178,9 +168,7 @@ def main():
             )
         )
 
-    # ---------------------------------------------------------
-    # How many drivers are affected on the same lap?
-    # ---------------------------------------------------------
+    # --- How many drivers are affected on the same lap? ---
 
     print("\n" + "-" * 78)
     print("MULTI-CAR SLOW LAPS")
@@ -200,9 +188,7 @@ def main():
         multi_car.head(30).to_string()
     )
 
-    # ---------------------------------------------------------
-    # Full slow-lap summary
-    # ---------------------------------------------------------
+    # --- Full slow-lap summary ---
 
     print("\n" + "-" * 78)
     print("SLOW TARGETS BY COMPOUND")

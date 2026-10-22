@@ -19,16 +19,8 @@ def main():
     print(f"Features shape: {df.shape}")
 
     # 1. SELECT FEATURES
-    #
-    # Ezeket az adatokat ismeri a rendszer az aktuális
-    # Race State időpontjában.
-    #
-    # next_lap_time NEM kerül az X-be, mert ez a target.
-    #
-    # A VSC feature-ök az aktuális, már befejezett kör
-    # eseményeit írják le, ezért használhatók a következő
-    # kör idejének előrejelzéséhez.
-    #
+    # Only data known at the current race state; next_lap_time is the target.
+    # VSC features describe the completed lap, so they are safe inputs.
 
     feature_columns = [
         "driver_number",
@@ -93,12 +85,7 @@ def main():
     )
 
     # 4. REMOVE ROWS WITHOUT TARGET
-    #
-    # Az utolsó körnél nincs következő kör,
-    # ezért next_lap_time = NaN.
-    #
-    # Ezekből nem lehet tanító példa.
-    #
+    # The last lap has no next lap (next_lap_time is NaN).
 
     missing_target = ml_df[
         target_column
@@ -114,19 +101,7 @@ def main():
     ).copy()
 
     # 5. HANDLE COMPOUND
-    #
-    # A compound kategorikus változó:
-    #
-    # HARD
-    # MEDIUM
-    # SOFT
-    #
-    # Az ML modellhez később numerikus reprezentációra
-    # lesz szükség.
-    #
-    # Egyelőre category típussá alakítjuk.
-    # A tényleges encoding a train pipeline-ban történik.
-    #
+    # Stored as category; encoding happens in the training pipeline.
 
     ml_df["compound"] = (
         ml_df["compound"].astype("category")

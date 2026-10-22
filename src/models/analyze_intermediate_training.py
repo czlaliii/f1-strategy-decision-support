@@ -26,9 +26,7 @@ def main():
 
     print(f"\nTotal intermediate rows: {len(intermediate)}")
 
-    # ---------------------------------------------------------
-    # Target distribution by race
-    # ---------------------------------------------------------
+    # --- Target distribution by race ---
 
     print("\n" + "-" * 78)
     print("NEXT LAP TIME BY RACE")
@@ -54,9 +52,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Rainfall + race
-    # ---------------------------------------------------------
+    # --- Rainfall + race ---
 
     print("\n" + "-" * 78)
     print("INTERMEDIATE BY RACE + RAINFALL")
@@ -89,9 +85,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Lap phase
-    # ---------------------------------------------------------
+    # --- Lap phase ---
 
     print("\n" + "-" * 78)
     print("INTERMEDIATE BY RACE PHASE")
@@ -135,9 +129,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Weather values
-    # ---------------------------------------------------------
+    # --- Weather values ---
 
     print("\n" + "-" * 78)
     print("WEATHER DURING INTERMEDIATE LAPS")
@@ -165,9 +157,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # Extremely slow laps
-    # ---------------------------------------------------------
+    # --- Extremely slow laps ---
 
     print("\n" + "-" * 78)
     print("INTERMEDIATE LAPS ABOVE 130 SECONDS")

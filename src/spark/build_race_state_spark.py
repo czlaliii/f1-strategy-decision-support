@@ -34,10 +34,7 @@ def load_json(
 
 
 def add_date_end(lap_data):
-    """
-    A kör kezdő időpontjából és a köridőből
-    kiszámítja a kör végét.
-    """
+    """Compute lap end from lap start and lap duration."""
 
     result = (
         lap_data
@@ -74,11 +71,9 @@ def asof_join_driver(
     event_time_column,
     value_columns,
 ):
-    """
-    Időben visszafelé történő illesztés driverenként.
+    """Per-driver backward as-of join.
 
-    Minden laphoz az eseményfolyam legutóbbi,
-    date_end-nél nem későbbi értékét rendeli.
+    Each lap gets the latest event value not later than its date_end.
     """
 
     lap_columns = laps.columns
@@ -119,7 +114,7 @@ def asof_join_driver(
         )
     )
 
-    # Az események és a lapok egy közös idővonalra kerülnek.
+    # Events and laps share one timeline.
     combined = (
         lap_rows
         .select(
@@ -189,11 +184,9 @@ def asof_join_weather(
     weather,
     value_columns,
 ):
-    """
-    Időjárási adatok időbeli visszafelé illesztése.
+    """Backward as-of join of weather data.
 
-    A weather nem driverenként változik, ezért
-    globális idővonalat használunk.
+    Weather is not per driver, so a global timeline is used.
     """
 
     lap_columns = laps.columns
@@ -296,21 +289,15 @@ def build_race_state(
     intervals,
     weather,
 ):
-    """
-    Pandas build_race_state Spark megfelelője.
-    """
+    """Spark equivalent of the pandas build_race_state."""
 
-    # ---------------------------------------------------------
-    # DATE END
-    # ---------------------------------------------------------
+    # --- DATE END ---
 
     race_state = add_date_end(
         lap_data
     )
 
-    # ---------------------------------------------------------
-    # POSITION
-    # ---------------------------------------------------------
+    # --- POSITION ---
 
     position = (
         position
@@ -327,8 +314,7 @@ def build_race_state(
         )
     )
 
-    # Csak a tényleges verseny időintervallumába
-    # eső pozícióadatokat használjuk.
+    # Use only position data within the actual race window.
     race_start = race_state.select(
         F.min("date_start")
     ).first()[0]
@@ -349,9 +335,7 @@ def build_race_state(
         value_columns=["position"],
     )
 
-    # ---------------------------------------------------------
-    # INTERVALS
-    # ---------------------------------------------------------
+    # --- INTERVALS ---
 
     intervals = (
         intervals
@@ -404,9 +388,7 @@ def build_race_state(
         ],
     )
 
-    # ---------------------------------------------------------
-    # WEATHER
-    # ---------------------------------------------------------
+    # --- WEATHER ---
 
     weather = (
         weather
@@ -437,9 +419,7 @@ def build_race_state(
             value_columns=weather_columns,
         )
 
-    # ---------------------------------------------------------
-    # SORT
-    # ---------------------------------------------------------
+    # --- SORT ---
 
     race_state = race_state.orderBy(
         "driver_number",

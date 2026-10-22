@@ -28,9 +28,7 @@ def validate_dataset(df):
     print(f"\nTotal rows: {total_rows}")
     print(f"Columns:    {len(df.columns)}")
 
-    # ---------------------------------------------------------
-    # 1. Duplicate race + driver + lap keys
-    # ---------------------------------------------------------
+    # --- 1. Duplicate race + driver + lap keys ---
 
     print("\n" + "=" * 70)
     print("1. DUPLICATE RACE / DRIVER / LAP KEYS")
@@ -73,9 +71,7 @@ def validate_dataset(df):
     else:
         print("PASS: No duplicate race/driver/lap keys.")
 
-    # ---------------------------------------------------------
-    # 2. Row counts by race
-    # ---------------------------------------------------------
+    # --- 2. Row counts by race ---
 
     print("\n" + "=" * 70)
     print("2. ROW COUNTS BY RACE")
@@ -88,9 +84,7 @@ def validate_dataset(df):
         .show(20, truncate=False)
     )
 
-    # ---------------------------------------------------------
-    # 3. Null target check
-    # ---------------------------------------------------------
+    # --- 3. Null target check ---
 
     print("\n" + "=" * 70)
     print("3. TARGET CHECK")
@@ -109,9 +103,7 @@ def validate_dataset(df):
     else:
         print("WARNING: Null target values found.")
 
-    # ---------------------------------------------------------
-    # 4. VSC summary
-    # ---------------------------------------------------------
+    # --- 4. VSC summary ---
 
     print("\n" + "=" * 70)
     print("4. VSC FEATURE SUMMARY")
@@ -147,9 +139,7 @@ def validate_dataset(df):
         .show(20, truncate=False)
     )
 
-    # ---------------------------------------------------------
-    # 5. Basic feature sanity checks
-    # ---------------------------------------------------------
+    # --- 5. Basic feature sanity checks ---
 
     print("\n" + "=" * 70)
     print("5. BASIC SANITY CHECKS")

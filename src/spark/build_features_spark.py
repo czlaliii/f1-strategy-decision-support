@@ -18,20 +18,13 @@ def create_spark_session() -> SparkSession:
 
 
 def build_features(race_state):
-    """
-    Spark feature engineering.
+    """Spark feature engineering.
 
-    A múltbeli feature-ek kizárólag korábbi körökből
-    származnak. A next_lap_time célváltozó.
-
-    A 200 másodpercnél hosszabb, nem nullás köridők
-    extrém értéknek számítanak, ezért ezeket még a
-    feature engineering előtt kiszűrjük.
+    Historical features use only earlier laps; next_lap_time is the target.
+    Non-null lap times over 200 s are dropped as outliers first.
     """
 
-    # ---------------------------------------------------------
-    # EXTREME LAP TIME FILTER
-    # ---------------------------------------------------------
+    # --- EXTREME LAP TIME FILTER ---
 
     race_state = race_state.filter(
         F.col("lap_duration").isNull()
@@ -54,9 +47,7 @@ def build_features(race_state):
         .rowsBetween(-5, -1)
     )
 
-    # ---------------------------------------------------------
-    # PREVIOUS LAP
-    # ---------------------------------------------------------
+    # --- PREVIOUS LAP ---
 
     result = (
         race_state
@@ -68,9 +59,7 @@ def build_features(race_state):
         )
     )
 
-    # ---------------------------------------------------------
-    # ROLLING AVERAGES
-    # ---------------------------------------------------------
+    # --- ROLLING AVERAGES ---
 
     result = (
         result
@@ -88,9 +77,7 @@ def build_features(race_state):
         )
     )
 
-    # ---------------------------------------------------------
-    # LAP TIME DELTA
-    # ---------------------------------------------------------
+    # --- LAP TIME DELTA ---
 
     previous_lap = F.lag(
         "lap_duration",
@@ -107,9 +94,7 @@ def build_features(race_state):
         previous_lap - lap_before_previous,
     )
 
-    # ---------------------------------------------------------
-    # POSITION CHANGE
-    # ---------------------------------------------------------
+    # --- POSITION CHANGE ---
 
     result = result.withColumn(
         "position_change",
@@ -120,9 +105,7 @@ def build_features(race_state):
         - F.col("position"),
     )
 
-    # ---------------------------------------------------------
-    # GAP CHANGE
-    # ---------------------------------------------------------
+    # --- GAP CHANGE ---
 
     result = result.withColumn(
         "gap_change",
@@ -132,9 +115,7 @@ def build_features(race_state):
         ),
     )
 
-    # ---------------------------------------------------------
-    # INTERVAL CHANGE
-    # ---------------------------------------------------------
+    # --- INTERVAL CHANGE ---
 
     result = result.withColumn(
         "interval_change",
@@ -144,9 +125,7 @@ def build_features(race_state):
         ),
     )
 
-    # ---------------------------------------------------------
-    # LAPS SINCE PIT
-    # ---------------------------------------------------------
+    # --- LAPS SINCE PIT ---
 
     last_pit_lap = F.max(
         F.when(
@@ -171,9 +150,7 @@ def build_features(race_state):
         ),
     )
 
-    # ---------------------------------------------------------
-    # TRACK / AIR TEMPERATURE DIFFERENCE
-    # ---------------------------------------------------------
+    # --- TRACK / AIR TEMPERATURE DIFFERENCE ---
 
     result = result.withColumn(
         "track_air_temp_difference",
@@ -181,9 +158,7 @@ def build_features(race_state):
         - F.col("air_temperature"),
     )
 
-    # ---------------------------------------------------------
-    # NEXT LAP TIME
-    # ---------------------------------------------------------
+    # --- NEXT LAP TIME ---
 
     result = result.withColumn(
         "next_lap_time",
@@ -195,9 +170,7 @@ def build_features(race_state):
         ),
     )
 
-    # ---------------------------------------------------------
-    # CLEANUP
-    # ---------------------------------------------------------
+    # --- CLEANUP ---
 
     result = result.drop(
         "_pit_count",
@@ -259,9 +232,7 @@ def main() -> None:
             f"{len(race_state.columns)}"
         )
 
-        # -----------------------------------------------------
-        # COUNT EXTREME LAP TIMES
-        # -----------------------------------------------------
+        # --- COUNT EXTREME LAP TIMES ---
 
         extreme_count = race_state.filter(
             F.col("lap_duration").isNotNull()

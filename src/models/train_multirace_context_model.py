@@ -29,9 +29,7 @@ MODEL_PATH = MODEL_DIR / "gradient_boosting_with_context_pipeline.joblib"
 TARGET = "next_lap_time"
 
 
-# ============================================================================
-# 1. EREDETI 35 BASE FEATURE
-# ============================================================================
+# --- 1. ORIGINAL 35 BASE FEATURES ---
 
 BASE_FEATURE_COLUMNS = [
     "driver_number",
@@ -72,9 +70,7 @@ BASE_FEATURE_COLUMNS = [
 ]
 
 
-# ============================================================================
-# 2. CONTEXT FEATURE
-# ============================================================================
+# --- 2. CONTEXT FEATURES ---
 
 CONTEXT_FEATURE_COLUMNS = [
     # Historical driver
@@ -148,7 +144,7 @@ CONTEXT_FEATURE_COLUMNS = [
 ]
 
 
-# A team új kategóriás feature.
+# Team as a new categorical feature.
 CATEGORICAL_FEATURES = [
     "compound",
     "team",
@@ -200,19 +196,14 @@ def evaluate(
     )
 
 def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Creates the same derived missingness indicators used by the
-    baseline model.
+    """Create the missingness indicators used by the baseline model.
 
-    The source parquet does not physically contain these columns;
-    they are created immediately before model training.
+    They are not stored in the source parquet; they are built right before training.
     """
 
     df = df.copy()
 
-    # --------------------------------------------------------------
-    # Missingness indicators
-    # --------------------------------------------------------------
+    # --- Missingness indicators ---
 
     missing_indicator_columns = [
         "position",
@@ -232,9 +223,7 @@ def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
             df[column].isna().astype(int)
         )
 
-    # --------------------------------------------------------------
-    # Previous pit indicator
-    # --------------------------------------------------------------
+    # --- Previous pit indicator ---
 
     df["has_previous_pit"] = (
         df["laps_since_pit"].notna().astype(int)
@@ -248,9 +237,7 @@ def main() -> None:
     print("MULTI-RACE GRADIENT BOOSTING WITH HISTORICAL + PRE-RACE CONTEXT")
     print("=" * 78)
 
-    # ------------------------------------------------------------------
-    # Load data
-    # ------------------------------------------------------------------
+    # --- Load data ---
 
     train_df = pd.read_parquet(TRAIN_PATH)
     validation_df = pd.read_parquet(VALIDATION_PATH)
@@ -275,9 +262,7 @@ def main() -> None:
         f"Test:        {test_df.shape}"
     )
 
-    # ------------------------------------------------------------------
-    # Feature validation
-    # ------------------------------------------------------------------
+    # --- Feature validation ---
 
     missing_features = [
         column
@@ -311,9 +296,7 @@ def main() -> None:
     for column in CATEGORICAL_FEATURES:
         print(f"- {column}")
 
-    # ------------------------------------------------------------------
-    # X / y
-    # ------------------------------------------------------------------
+    # --- X / y ---
 
     X_train = train_df[FEATURE_COLUMNS].copy()
     y_train = train_df[TARGET]
@@ -324,9 +307,7 @@ def main() -> None:
     X_test = test_df[FEATURE_COLUMNS].copy()
     y_test = test_df[TARGET]
 
-    # ------------------------------------------------------------------
-    # Preprocessing
-    # ------------------------------------------------------------------
+    # --- Preprocessing ---
 
     numeric_pipeline = Pipeline(
         steps=[
@@ -368,9 +349,7 @@ def main() -> None:
         ]
     )
 
-    # ------------------------------------------------------------------
-    # Model
-    # ------------------------------------------------------------------
+    # --- Model ---
 
     model = HistGradientBoostingRegressor(
         max_iter=300,
@@ -393,9 +372,7 @@ def main() -> None:
         ]
     )
 
-    # ------------------------------------------------------------------
-    # Training
-    # ------------------------------------------------------------------
+    # --- Training ---
 
     print("\nTraining Gradient Boosting model...")
     pipeline.fit(
@@ -405,9 +382,7 @@ def main() -> None:
 
     print("Training finished.")
 
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
+    # --- Validation ---
 
     validation_pred = pipeline.predict(
         X_validation
@@ -419,9 +394,7 @@ def main() -> None:
         validation_pred,
     )
 
-    # ------------------------------------------------------------------
-    # Test
-    # ------------------------------------------------------------------
+    # --- Test ---
 
     test_pred = pipeline.predict(
         X_test
@@ -433,9 +406,7 @@ def main() -> None:
         test_pred,
     )
 
-    # ------------------------------------------------------------------
-    # Previous-lap baseline
-    # ------------------------------------------------------------------
+    # --- Previous-lap baseline ---
 
     validation_baseline_mask = (
         validation_df["previous_lap_time"].notna()
@@ -463,9 +434,7 @@ def main() -> None:
         ],
     )
 
-    # ------------------------------------------------------------------
-    # Save
-    # ------------------------------------------------------------------
+    # --- Save ---
 
     MODEL_DIR.mkdir(
         parents=True,

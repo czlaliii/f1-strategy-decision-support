@@ -25,9 +25,7 @@ FEATURE_PATH = MODEL_DIR / "final_model_features.txt"
 TARGET = "next_lap_time"
 
 
-# ============================================================
-# BASELINE FEATURES
-# ============================================================
+# --- BASELINE FEATURES ---
 
 BASE_FEATURE_COLUMNS = [
     "driver_number",
@@ -58,9 +56,7 @@ BASE_FEATURE_COLUMNS = [
 ]
 
 
-# ============================================================
-# SELECTED PRACTICE FEATURES
-# ============================================================
+# --- SELECTED PRACTICE FEATURES ---
 
 FP1_FEATURES = [
     "fp1_available",
@@ -106,9 +102,7 @@ FINAL_FEATURE_COLUMNS = (
 )
 
 
-# ============================================================
-# MISSING INDICATORS
-# ============================================================
+# --- MISSING INDICATORS ---
 
 MISSING_INDICATOR_COLUMNS = [
     "position",
@@ -135,9 +129,7 @@ def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ============================================================
-# MODEL
-# ============================================================
+# --- MODEL ---
 
 def build_model(feature_columns):
     categorical_features = [
@@ -208,9 +200,7 @@ def build_model(feature_columns):
     )
 
 
-# ============================================================
-# EVALUATION
-# ============================================================
+# --- EVALUATION ---
 
 def evaluate(
     model,
@@ -248,18 +238,14 @@ def evaluate(
     }
 
 
-# ============================================================
-# MAIN
-# ============================================================
+# --- MAIN ---
 
 def main():
     print("=" * 78)
     print("FINAL MULTI-RACE MODEL TRAINING")
     print("=" * 78)
 
-    # --------------------------------------------------------
-    # Load data
-    # --------------------------------------------------------
+    # --- Load data ---
 
     train_raw = pd.read_parquet(TRAIN_PATH)
     validation_raw = pd.read_parquet(VALIDATION_PATH)
@@ -274,9 +260,7 @@ def main():
     print(f"Validation:  {validation.shape}")
     print(f"Test:        {test.shape}")
 
-    # --------------------------------------------------------
-    # Validate features
-    # --------------------------------------------------------
+    # --- Validate features ---
 
     feature_columns = (
         FINAL_FEATURE_COLUMNS
@@ -308,9 +292,7 @@ def main():
     print("\nFinal feature configuration:")
     print(f"Number of features: {len(feature_columns)}")
 
-    # --------------------------------------------------------
-    # Split X / y
-    # --------------------------------------------------------
+    # --- Split X / y ---
 
     X_train = train[feature_columns]
     y_train = train[TARGET]
@@ -321,9 +303,7 @@ def main():
     X_test = test[feature_columns]
     y_test = test[TARGET]
 
-    # --------------------------------------------------------
-    # Build and train
-    # --------------------------------------------------------
+    # --- Build and train ---
 
     model = build_model(feature_columns)
 
@@ -336,9 +316,7 @@ def main():
 
     print("Training finished.")
 
-    # --------------------------------------------------------
-    # Evaluate
-    # --------------------------------------------------------
+    # --- Evaluate ---
 
     validation_metrics = evaluate(
         model,
@@ -354,9 +332,7 @@ def main():
         "TEST",
     )
 
-    # --------------------------------------------------------
-    # Save model
-    # --------------------------------------------------------
+    # --- Save model ---
 
     MODEL_DIR.mkdir(
         parents=True,
@@ -380,9 +356,7 @@ def main():
     print(f"Model:    {MODEL_PATH}")
     print(f"Features: {FEATURE_PATH}")
 
-    # --------------------------------------------------------
-    # Final summary
-    # --------------------------------------------------------
+    # --- Final summary ---
 
     print("\n" + "=" * 78)
     print("FINAL SUMMARY")

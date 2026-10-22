@@ -7,10 +7,8 @@ Examples (run from the project root):
     python -m src.ingestion.download_race --all
     python -m src.ingestion.download_race --all --telemetry full
 
-The default telemetry mode downloads location data needed by the replay.
-Use --telemetry full to also download high-volume car_data records.
-Existing valid JSON files are kept and skipped, so interrupted downloads can
-be resumed safely.
+Default mode downloads the location data used by the replay; --telemetry full
+also fetches car_data. Valid existing files are skipped, so downloads can resume.
 """
 
 import argparse

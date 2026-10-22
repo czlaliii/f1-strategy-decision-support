@@ -17,7 +17,7 @@ def main():
     intervals = load_json("intervals.json")
     weather = load_json("weather.json")
 
-    # Időpontok datetime formátumra alakítása
+    # Convert timestamps to datetime
     laps["date_start"] = pd.to_datetime(
         laps["date_start"],
         utc=True,

@@ -32,9 +32,7 @@ def analyze_split(name, path):
     print(f"Rows: {len(df)}")
     print(f"Columns: {len(df.columns)}")
 
-    # ---------------------------------------------------------
-    # Compound distribution
-    # ---------------------------------------------------------
+    # --- Compound distribution ---
 
     print("\nTYRE COMPOUND DISTRIBUTION")
     print("-" * 50)
@@ -56,9 +54,7 @@ def analyze_split(name, path):
 
     print(compound_table.to_string())
 
-    # ---------------------------------------------------------
-    # Rainfall distribution
-    # ---------------------------------------------------------
+    # --- Rainfall distribution ---
 
     print("\nRAINFALL DISTRIBUTION")
     print("-" * 50)
@@ -83,9 +79,7 @@ def analyze_split(name, path):
             f"{rainfall_rows / len(df) * 100:.2f}%"
         )
 
-    # ---------------------------------------------------------
-    # Race distribution
-    # ---------------------------------------------------------
+    # --- Race distribution ---
 
     print("\nROWS BY RACE")
     print("-" * 50)
@@ -98,9 +92,7 @@ def analyze_split(name, path):
 
     print(race_counts.to_string())
 
-    # ---------------------------------------------------------
-    # Race + compound
-    # ---------------------------------------------------------
+    # --- Race + compound ---
 
     print("\nRACE + COMPOUND DISTRIBUTION")
     print("-" * 50)
@@ -112,9 +104,7 @@ def analyze_split(name, path):
 
     print(race_compound.to_string())
 
-    # ---------------------------------------------------------
-    # Intermediate / wet races
-    # ---------------------------------------------------------
+    # --- Intermediate / wet races ---
 
     print("\nINTERMEDIATE / WET BY RACE")
     print("-" * 50)
@@ -146,9 +136,7 @@ def analyze_split(name, path):
         print("\nBy compound:")
         print(wet_by_compound.to_string())
 
-    # ---------------------------------------------------------
-    # Rain + compound
-    # ---------------------------------------------------------
+    # --- Rain + compound ---
 
     print("\nRAINFALL + COMPOUND")
     print("-" * 50)
@@ -193,9 +181,7 @@ def main():
             path,
         )
 
-    # ---------------------------------------------------------
-    # Combined summary
-    # ---------------------------------------------------------
+    # --- Combined summary ---
 
     print_section("COMBINED SUMMARY")
 

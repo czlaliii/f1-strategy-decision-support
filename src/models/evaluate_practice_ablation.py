@@ -125,8 +125,7 @@ def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def make_model(feature_columns, train_df):
-    # Csak olyan feature maradjon,
-    # amelynek a training adatokban legalább egy értéke van.
+    # Keep only features with at least one value in training.
     actual_features = [
         column
         for column in feature_columns

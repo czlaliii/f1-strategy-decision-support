@@ -55,7 +55,7 @@ def build_ml_dataset(spark):
 
         df = spark.read.parquet(str(input_path))
 
-        # A verseny azonosítójának hozzáadása.
+        # Add the race identifier.
         df = df.withColumn("race", F.lit(race))
 
         datasets.append(df)
@@ -67,7 +67,7 @@ def build_ml_dataset(spark):
     print("UNION")
     print("=" * 70)
 
-    # A 10 verseny összefűzése.
+    # Concatenate the 10 races.
     result = datasets[0]
 
     for df in datasets[1:]:
@@ -83,10 +83,8 @@ def build_ml_dataset(spark):
         f"{before_filter}"
     )
 
-    # Csak normál versenyköröket használunk a modellhez.
-    # A 200 másodpercnél hosszabb jelenlegi vagy következő
-    # köridők valószínűleg versenymegszakítást / újraindítást
-    # tartalmazó mérési értékek, ezért kizárjuk őket.
+    # Use normal race laps only: current/next lap times over 200 s
+    # likely include stoppages or restarts.
     result = result.filter(
         F.col("next_lap_time").isNotNull()
     )
@@ -117,7 +115,7 @@ def build_ml_dataset(spark):
         f"{before_filter - after_target_filter}"
     )
 
-    # Rendezés az átláthatóság kedvéért.
+    # Sort for readability.
     result = result.orderBy(
         "race",
         "driver_number",

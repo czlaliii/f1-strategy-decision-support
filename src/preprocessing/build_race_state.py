@@ -30,7 +30,7 @@ def main():
 
     print(f"Lap data shape: {laps.shape}")
 
-    ### LAP DATA
+    # 1. LAP DATA
 
     laps["date_start"] = pd.to_datetime(
         laps["date_start"],
@@ -38,7 +38,7 @@ def main():
         format="mixed"
     ).astype("datetime64[ns, UTC]")
 
-    # The date of the end of the lap
+    # Lap end timestamp
     laps["date_end"] = (
         laps["date_start"]
         + pd.to_timedelta(
@@ -60,7 +60,7 @@ def main():
     race_start = laps["date_start"].min()
     race_end = laps["date_end"].max()
 
-    ### WEATHER
+    # 2. WEATHER
 
     weather = load_json("weather.json")
 
@@ -106,7 +106,7 @@ def main():
         columns=["date"]
     )
 
-    # Could be that the weather is NaN at the start
+    # Weather may be NaN at the start
     weather_columns = [
         "wind_direction",
         "rainfall",
@@ -124,7 +124,7 @@ def main():
             .bfill()
         )
 
-    ### POSITION
+    # 3. POSITION
 
     print("Loading position data...")
 
@@ -153,8 +153,7 @@ def main():
         ["date", "driver_number"]
     )
 
-    # Align the position data with the end of the lap based on
-    # the latest known state associated with the given driver
+    # Use the driver's latest known position at lap end
     race_state = pd.merge_asof(
         race_state.sort_values(
             ["date_end", "driver_number"]

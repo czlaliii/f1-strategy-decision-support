@@ -19,7 +19,7 @@ RACES = [
 
 
 def load_json(path: Path) -> pd.DataFrame:
-    """JSON fájl betöltése Pandas DataFrame-be."""
+    """Load a JSON file into a pandas DataFrame."""
 
     with path.open(
         "r",
@@ -35,14 +35,9 @@ def build_lap_data(
     stints: pd.DataFrame,
     pit: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    A Pandas alapú lap-adat feldolgozás.
-    Ugyanazt a logikát használja, mint az eredeti preprocessing.
-    """
+    """pandas lap-data processing, same logic as the original preprocessing."""
 
-    # ---------------------------------------------------------
-    # STINT MAPPING
-    # ---------------------------------------------------------
+    # --- STINT MAPPING ---
 
     stint_rows = []
 
@@ -55,7 +50,7 @@ def build_lap_data(
         lap_start_value = stint["lap_start"]
         lap_end_value = stint["lap_end"]
 
-        # Ha nincs érvényes lap-tartomány, ezt a stintet kihagyjuk.
+        # Skip stints without a valid lap range.
         if (
             pd.isna(lap_start_value)
             or pd.isna(lap_end_value)
@@ -87,7 +82,7 @@ def build_lap_data(
 
     stint_mapping = pd.DataFrame(stint_rows)
 
-    # A közös határköröknél a későbbi stintet tartjuk meg.
+    # On shared boundary laps keep the later stint.
     stint_mapping = (
         stint_mapping
         .sort_values(["driver_number", "lap_number", "stint_number"])
@@ -97,9 +92,7 @@ def build_lap_data(
         )
     )
 
-    # ---------------------------------------------------------
-    # LAP + STINT
-    # ---------------------------------------------------------
+    # --- LAP + STINT ---
 
     lap_data = laps.merge(
         stint_mapping,
@@ -110,9 +103,7 @@ def build_lap_data(
         how="left",
     )
 
-    # ---------------------------------------------------------
-    # PIT STOP FLAG
-    # ---------------------------------------------------------
+    # --- PIT STOP FLAG ---
 
     if (
         not pit.empty
@@ -158,9 +149,7 @@ def build_lap_data(
         .astype(bool)
     )
 
-    # ---------------------------------------------------------
-    # SORT
-    # ---------------------------------------------------------
+    # --- SORT ---
 
     lap_data = lap_data.sort_values(
         [
@@ -297,9 +286,7 @@ def main() -> None:
                 f"Error: {exc}"
             )
 
-    # ---------------------------------------------------------
-    # SUMMARY
-    # ---------------------------------------------------------
+    # --- SUMMARY ---
 
     benchmark = pd.DataFrame(
         results

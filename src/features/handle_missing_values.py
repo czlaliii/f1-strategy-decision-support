@@ -13,20 +13,17 @@ def main():
     print(f"Initial shape: {df.shape}")
 
     # 1. Compound
-    # A gumi típusa egy adott stint alatt nem változik.
-    # Ezért driverenként előre töltjük a hiányzó értékeket.
+    # Constant within a stint, so forward-fill per driver.
     df["compound"] = (
         df.groupby("driver_number")["compound"]
         .ffill()
     )
 
-    # Ha még mindig marad hiányzó compound,
-    # akkor az adott driver első ismert stintje előtt vagyunk.
+    # Remaining gaps are before the driver's first known stint.
     df["compound"] = df["compound"].fillna("UNKNOWN")
 
     # 2. Position
-    # A pozíció folytonos versenyállapot,
-    # ezért driverenként forward fill használható.
+    # Continuous race state, so forward-fill per driver.
 
     df["position_missing"] = df["position"].isna().astype(int)
 
@@ -36,8 +33,7 @@ def main():
     )
 
     # 3. Interval
-    # Missing indicator:
-    # megőrizzük azt az információt, hogy eredetileg hiányzott.
+    # Keep a missing indicator for the original gaps.
     df["interval_missing"] = df["interval"].isna().astype(int)
 
     interval_median = df["interval"].median()
@@ -57,35 +53,21 @@ def main():
     )
 
     # 5. Previous lap / rolling features
-    # Ezek a verseny elején természetesen hiányoznak,
-    # mert még nincs elegendő előző kör.
-    #
-    # Nem töltjük őket mesterségesen.
-    # A későbbi modell-előkészítésnél eldöntjük,
-    # hogy szükséges-e ezeket a korai sorokat elhagyni.
+    # Naturally missing early in the race; not imputed here.
 
     # 6. laps_since_pit
-    # NaN itt nem azt jelenti, hogy "0 kör telt el".
-    # Inkább azt, hogy még nem volt korábbi boxkiállás.
-    #
-    # Ezért külön flaget készítünk.
+    # NaN means no pit stop yet (not zero laps), so add a flag.
     df["has_previous_pit"] = (
         df["laps_since_pit"].notna().astype(int)
     )
 
-    # A modell számára egy külön numerikus értéket használunk.
-    # Az első stint esetében a tyre_age szolgálhat közelítő
-    # információként arról, hány kör telt el a stint kezdete óta.
+    # Numeric fill for the model; tyre_age approximates stint progress in the first stint.
     df["laps_since_pit"] = df["laps_since_pit"].fillna(
         df["tyre_age"]
     )
 
     # 7. Gap features
-    # gap_to_leader és gap_change esetében NEM végzünk
-    # egyszerű imputálást.
-    #
-    # A NaN itt jelenthet például +1 LAP állapotot,
-    # ezért az eredeti hiány információt külön flaggel őrizzük.
+    # Not imputed: NaN may mean +1 LAP, so keep a missing flag.
     df["gap_to_leader_missing"] = (
         df["gap_to_leader"].isna().astype(int)
     )

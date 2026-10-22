@@ -67,9 +67,7 @@ def process_race(
         exist_ok=True,
     )
 
-    # ---------------------------------------------------------
-    # INPUT PATHS
-    # ---------------------------------------------------------
+    # --- INPUT PATHS ---
 
     laps_path = data_dir / "laps.json"
     stints_path = data_dir / "stints.json"
@@ -80,9 +78,7 @@ def process_race(
     weather_path = data_dir / "weather.json"
     race_control_path = data_dir / "race_control.json"
 
-    # ---------------------------------------------------------
-    # OUTPUT PATHS
-    # ---------------------------------------------------------
+    # --- OUTPUT PATHS ---
 
     lap_data_path = (
         processed_dir / "lap_data.parquet"
@@ -100,9 +96,7 @@ def process_race(
         processed_dir / "features.parquet"
     )
 
-    # ---------------------------------------------------------
-    # LOAD RAW DATA
-    # ---------------------------------------------------------
+    # --- LOAD RAW DATA ---
 
     print("\nLoading raw data...")
 
@@ -149,9 +143,7 @@ def process_race(
     print(f"Weather:        {weather.count()}")
     print(f"Race control:   {race_control.count()}")
 
-    # ---------------------------------------------------------
-    # 1. LAP DATA
-    # ---------------------------------------------------------
+    # --- 1. LAP DATA ---
 
     print("\n[1/4] Building lap data...")
 
@@ -182,9 +174,7 @@ def process_race(
         f"Saved: {lap_data_path}"
     )
 
-    # ---------------------------------------------------------
-    # 2. RACE STATE
-    # ---------------------------------------------------------
+    # --- 2. RACE STATE ---
 
     print("\n[2/4] Building race state...")
 
@@ -216,9 +206,7 @@ def process_race(
         f"Saved: {race_state_path}"
     )
 
-    # ---------------------------------------------------------
-    # 3. RACE CONDITIONS / VSC
-    # ---------------------------------------------------------
+    # --- 3. RACE CONDITIONS / VSC ---
 
     print("\n[3/4] Adding race conditions...")
 
@@ -260,9 +248,7 @@ def process_race(
         f"Saved: {conditions_path}"
     )
 
-    # ---------------------------------------------------------
-    # 4. FEATURE ENGINEERING
-    # ---------------------------------------------------------
+    # --- 4. FEATURE ENGINEERING ---
 
     print("\n[4/4] Building features...")
 
@@ -295,9 +281,7 @@ def process_race(
         f"Saved: {features_path}"
     )
 
-    # ---------------------------------------------------------
-    # CLEANUP
-    # ---------------------------------------------------------
+    # --- CLEANUP ---
 
     features.unpersist()
     race_state_with_conditions.unpersist()
@@ -368,9 +352,7 @@ def main() -> None:
     finally:
         spark.stop()
 
-    # ---------------------------------------------------------
-    # SUMMARY
-    # ---------------------------------------------------------
+    # --- SUMMARY ---
 
     print()
     print("=" * 70)

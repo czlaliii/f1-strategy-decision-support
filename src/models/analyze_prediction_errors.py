@@ -43,9 +43,7 @@ def main():
 
     df = pd.read_parquet(DATA_PATH)
 
-    # ---------------------------------------------------------
-    # 1. Train / validation split
-    # ---------------------------------------------------------
+    # --- 1. Train / validation split ---
 
     train_df = df[df["lap_number"] <= 50].copy()
     validation_df = df[df["lap_number"] > 50].copy()
@@ -65,9 +63,7 @@ def main():
     print(f"Training laps:   {train_df['lap_number'].min()} - {train_df['lap_number'].max()}")
     print(f"Validation laps: {validation_df['lap_number'].min()} - {validation_df['lap_number'].max()}")
 
-    # ---------------------------------------------------------
-    # 2. Preprocessing
-    # ---------------------------------------------------------
+    # --- 2. Preprocessing ---
 
     numerical_features = [
         column
@@ -117,9 +113,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # 3. Model
-    # ---------------------------------------------------------
+    # --- 3. Model ---
 
     model = HistGradientBoostingRegressor(
         max_iter=300,
@@ -136,9 +130,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # 4. Training
-    # ---------------------------------------------------------
+    # --- 4. Training ---
 
     print("\n=== TRAINING ===")
 
@@ -146,9 +138,7 @@ def main():
 
     print("Gradient Boosting training completed.")
 
-    # ---------------------------------------------------------
-    # 5. Predictions
-    # ---------------------------------------------------------
+    # --- 5. Predictions ---
 
     predictions = pipeline.predict(X_validation)
 
@@ -178,9 +168,7 @@ def main():
         validation_results["error"].abs()
     )
 
-    # ---------------------------------------------------------
-    # 6. Overall metrics
-    # ---------------------------------------------------------
+    # --- 6. Overall metrics ---
 
     mae = mean_absolute_error(
         y_validation,
@@ -202,9 +190,7 @@ def main():
     print(f"RMSE: {rmse:.3f} s")
     print(f"R²:   {r2:.3f}")
 
-    # ---------------------------------------------------------
-    # 7. Error statistics
-    # ---------------------------------------------------------
+    # --- 7. Error statistics ---
 
     print("\n=== ERROR STATISTICS ===")
 
@@ -212,9 +198,7 @@ def main():
         validation_results["absolute_error"].describe().to_string()
     )
 
-    # ---------------------------------------------------------
-    # 8. Worst predictions
-    # ---------------------------------------------------------
+    # --- 8. Worst predictions ---
 
     print("\n=== 15 WORST PREDICTIONS ===")
 
@@ -239,9 +223,7 @@ def main():
         ].to_string(index=False)
     )
 
-    # ---------------------------------------------------------
-    # 9. Error by compound
-    # ---------------------------------------------------------
+    # --- 9. Error by compound ---
 
     print("\n=== ERROR BY COMPOUND ===")
 
@@ -259,9 +241,7 @@ def main():
 
     print(compound_error.to_string())
 
-    # ---------------------------------------------------------
-    # 10. Error by race lap
-    # ---------------------------------------------------------
+    # --- 10. Error by race lap ---
 
     print("\n=== ERROR BY LAP ===")
 
@@ -279,9 +259,7 @@ def main():
 
     print(lap_error.head(10).to_string())
 
-    # ---------------------------------------------------------
-    # 11. Error by tyre age
-    # ---------------------------------------------------------
+    # --- 11. Error by tyre age ---
 
     print("\n=== ERROR BY TYRE AGE ===")
 
@@ -299,9 +277,7 @@ def main():
 
     print(tyre_age_error.to_string())
 
-    # ---------------------------------------------------------
-    # 12. Error by laps since pit
-    # ---------------------------------------------------------
+    # --- 12. Error by laps since pit ---
 
     print("\n=== ERROR BY LAPS SINCE PIT ===")
 
@@ -319,9 +295,7 @@ def main():
 
     print(pit_history_error.head(20).to_string())
 
-    # ---------------------------------------------------------
-    # 13. Systematic over / under prediction
-    # ---------------------------------------------------------
+    # --- 13. Systematic over / under prediction ---
 
     print("\n=== SYSTEMATIC ERROR ===")
 
@@ -338,9 +312,7 @@ def main():
     else:
         print("The model has no significant overall bias.")
 
-    # ---------------------------------------------------------
-    # 14. Save detailed predictions
-    # ---------------------------------------------------------
+    # --- 14. Save detailed predictions ---
 
     output_path = (
         "data/processed/hungary_2026/"

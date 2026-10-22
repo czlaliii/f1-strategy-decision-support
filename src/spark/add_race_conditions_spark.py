@@ -3,9 +3,8 @@
 Usage from the repository root:
     python -m src.spark.add_race_conditions_spark silverstone_2025
 
-The race-state input timestamps are treated as UTC. Spark is explicitly configured
-for UTC, and the final Parquet file is written through pandas so this script does
-not depend on Hadoop's winutils.exe on Windows.
+Timestamps are treated as UTC. Output is written via pandas, so winutils.exe
+is not needed on Windows.
 """
 
 import json
@@ -89,11 +88,10 @@ def load_race_control():
 
 
 def resolve_sc_end_timestamp(event_timestamp, race_state_rows):
-    """Resolve 'SAFETY CAR IN THIS LAP' to the earliest end of the active target lap.
+    """Resolve 'SAFETY CAR IN THIS LAP' to the earliest end of the target lap.
 
-    This keeps the existing project logic: determine the most common lap number
-    among drivers whose lap contains the race-control event, then use the earliest
-    date_end among those drivers on that lap as the interval endpoint.
+    The target lap is the most common lap among drivers whose lap contains the
+    event; its earliest date_end is the interval endpoint.
     """
     active_rows = []
 
@@ -375,8 +373,7 @@ def main():
             "sc_duration_in_lap", "sc_lap_fraction", "sc_active_at_end",
         ).orderBy("lap_number", "driver_number").show(100, truncate=False)
 
-        # Return only keys + generated features to pandas, then merge them into the
-        # complete original dataset. This preserves every pre-existing race-state column.
+        # Return only keys + new features, then merge into the full dataset to keep all columns.
         feature_pd = race_state.select(*KEY_COLUMNS, *FEATURE_COLUMNS).toPandas()
         feature_pd = feature_pd.drop_duplicates(subset=KEY_COLUMNS, keep="last")
 
@@ -397,9 +394,8 @@ def main():
         )
 
         OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        # Pandas/pyarrow write avoids the Windows Hadoop winutils dependency.
-        # A korábbi, generált kimenet eltávolítása,
-        # ha könyvtárként vagy fájlként már létezik.
+        # pandas/pyarrow write avoids the Windows winutils dependency.
+        # Remove any previous output, whether file or directory.
         if OUTPUT_PATH.exists():
             if OUTPUT_PATH.is_dir():
                 shutil.rmtree(OUTPUT_PATH)

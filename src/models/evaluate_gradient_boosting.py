@@ -4,8 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 
-# Keep Matplotlib headless and its cache inside the project so the script also
-# works in non-interactive Windows environments.
+# Headless Matplotlib with an in-project cache (works on non-interactive Windows).
 os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.setdefault(
     "MPLCONFIGDIR",
@@ -185,8 +184,8 @@ def main():
     print("\n=== MODEL COMPARISON ===")
     print(comparison_df.to_string(float_format="{:.6f}".format))
 
-    # Permuting pipeline input columns measures the effect of each original feature,
-    # while the fitted ColumnTransformer still applies its one-hot encoding internally.
+    # Permuting raw input columns measures each original feature;
+    # the pipeline still one-hot encodes internally.
     print("\nCalculating validation permutation importance for the VSC model...")
     importance = permutation_importance(
         fitted_models["With VSC"],

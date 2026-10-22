@@ -26,9 +26,7 @@ OUTPUT_PATH = MODEL_DIR / "condition_ablation_results.csv"
 TARGET = "next_lap_time"
 
 
-# ============================================================
-# BASELINE FEATURES
-# ============================================================
+# --- BASELINE FEATURES ---
 
 BASE_FEATURES = [
     "driver_number",
@@ -59,9 +57,7 @@ BASE_FEATURES = [
 ]
 
 
-# ============================================================
-# PRACTICE FEATURES
-# ============================================================
+# --- PRACTICE FEATURES ---
 
 FP1_FEATURES = [
     "fp1_available",
@@ -98,9 +94,7 @@ FP3_FEATURES = [
 ]
 
 
-# ============================================================
-# MISSING INDICATORS
-# ============================================================
+# --- MISSING INDICATORS ---
 
 MISSING_INDICATOR_COLUMNS = [
     "position",
@@ -121,9 +115,7 @@ MISSING_FEATURES = [
 ]
 
 
-# ============================================================
-# RACE CONTROL FEATURES
-# ============================================================
+# --- RACE CONTROL FEATURES ---
 
 VSC_FEATURES = [
     "vsc_duration_in_lap",
@@ -153,9 +145,7 @@ FINAL_BASE_FEATURES = (
 )
 
 
-# ============================================================
-# DATA PREPARATION
-# ============================================================
+# --- DATA PREPARATION ---
 
 def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -221,9 +211,7 @@ def load_datasets():
     return train, validation, test
 
 
-# ============================================================
-# MODEL
-# ============================================================
+# --- MODEL ---
 
 def build_model(feature_columns, train_df):
     # Remove features with no observed values in training.
@@ -303,9 +291,7 @@ def build_model(feature_columns, train_df):
     return pipeline, actual_features
 
 
-# ============================================================
-# EVALUATION
-# ============================================================
+# --- EVALUATION ---
 
 def evaluate_experiment(
     name,

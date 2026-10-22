@@ -43,9 +43,7 @@ def main():
 
     print(f"Dataset shape: {df.shape}")
 
-    # ---------------------------------------------------------
-    # 1. Train / validation split
-    # ---------------------------------------------------------
+    # --- 1. Train / validation split ---
 
     train_df = df[df["lap_number"] <= 50].copy()
     validation_df = df[df["lap_number"] > 50].copy()
@@ -59,9 +57,7 @@ def main():
     X_validation = validation_df[FEATURE_COLUMNS]
     y_validation = validation_df[TARGET_COLUMN]
 
-    # ---------------------------------------------------------
-    # 2. Preprocessing
-    # ---------------------------------------------------------
+    # --- 2. Preprocessing ---
 
     numerical_features = [
         column
@@ -111,9 +107,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # 3. Gradient Boosting model
-    # ---------------------------------------------------------
+    # --- 3. Gradient Boosting model ---
 
     model = HistGradientBoostingRegressor(
         max_iter=300,
@@ -130,9 +124,7 @@ def main():
         ]
     )
 
-    # ---------------------------------------------------------
-    # 4. Training
-    # ---------------------------------------------------------
+    # --- 4. Training ---
 
     print("\n=== TRAINING ===")
 
@@ -140,9 +132,7 @@ def main():
 
     print("Gradient Boosting training completed.")
 
-    # ---------------------------------------------------------
-    # 5. Predictions
-    # ---------------------------------------------------------
+    # --- 5. Predictions ---
 
     predictions = pipeline.predict(X_validation)
 
@@ -166,15 +156,10 @@ def main():
     print(f"RMSE: {rmse:.3f} s")
     print(f"R²:   {r2:.3f}")
 
-    # ---------------------------------------------------------
-    # 6. Feature importance
-    # ---------------------------------------------------------
+    # --- 6. Feature importance ---
 
-    # HistGradientBoostingRegressor does not expose
-    # feature_importances_ directly.
-    #
-    # Therefore we use permutation importance on
-    # the complete pipeline.
+    # HistGradientBoostingRegressor has no feature_importances_,
+    # so use permutation importance on the full pipeline.
 
     from sklearn.inspection import permutation_importance
 
@@ -215,9 +200,7 @@ def main():
         )
     )
 
-    # ---------------------------------------------------------
-    # 7. Top 10 features
-    # ---------------------------------------------------------
+    # --- 7. Top 10 features ---
 
     print("\n=== TOP 10 FEATURES ===")
 

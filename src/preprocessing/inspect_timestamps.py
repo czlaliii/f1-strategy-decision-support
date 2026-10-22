@@ -40,8 +40,7 @@ def inspect():
         utc=True
     )
 
-    # Position endpoint may contain multiple sessions.
-    # Keep only the race session.
+    # Position data may include several sessions; keep the race only.
     if "session_key" in position.columns:
         position = position[
             position["session_key"] == 11342

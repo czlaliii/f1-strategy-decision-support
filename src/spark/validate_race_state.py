@@ -38,9 +38,7 @@ def main() -> None:
         f"Spark shape:  {spark_df.shape}"
     )
 
-    # ---------------------------------------------------------
-    # COLUMN CHECK
-    # ---------------------------------------------------------
+    # --- COLUMN CHECK ---
 
     pandas_columns = set(
         pandas_df.columns
@@ -62,9 +60,7 @@ def main() -> None:
         spark_columns - pandas_columns,
     )
 
-    # ---------------------------------------------------------
-    # COMMON COLUMNS
-    # ---------------------------------------------------------
+    # --- COMMON COLUMNS ---
 
     common_columns = [
         column
@@ -72,9 +68,7 @@ def main() -> None:
         if column in spark_df.columns
     ]
 
-    # ---------------------------------------------------------
-    # SORT
-    # ---------------------------------------------------------
+    # --- SORT ---
 
     keys = [
         "driver_number",
@@ -89,9 +83,7 @@ def main() -> None:
         keys
     ).reset_index(drop=True)
 
-    # ---------------------------------------------------------
-    # ROW CHECK
-    # ---------------------------------------------------------
+    # --- ROW CHECK ---
 
     print("\n=== ROW CHECK ===")
 
@@ -108,9 +100,7 @@ def main() -> None:
         ),
     )
 
-    # ---------------------------------------------------------
-    # VALUE CHECK
-    # ---------------------------------------------------------
+    # --- VALUE CHECK ---
 
     print("\n=== VALUE CHECK ===")
 
@@ -121,7 +111,7 @@ def main() -> None:
         pandas_series = pandas_df[column]
         spark_series = spark_df[column]
 
-        # Numerikus oszlopok
+        # Numeric columns
         if (
             pd.api.types.is_numeric_dtype(
                 pandas_series
@@ -169,9 +159,7 @@ def main() -> None:
             "All common columns match."
         )
 
-    # ---------------------------------------------------------
-    # IMPORTANT NUMERIC CHECK
-    # ---------------------------------------------------------
+    # --- IMPORTANT NUMERIC CHECK ---
 
     print(
         "\n=== IMPORTANT FIELDS ==="

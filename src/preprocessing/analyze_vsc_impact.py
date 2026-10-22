@@ -16,7 +16,7 @@ def main():
     with open(RACE_CONTROL_FILE, "r", encoding="utf-8") as file:
         race_control = json.load(file)
 
-    # VSC események
+    # VSC events
     vsc_events = []
 
     for event in race_control:
@@ -34,12 +34,12 @@ def main():
             f"({event.get('date')})"
         )
 
-    # Lap adatok
+    # Lap data
     print("\nLoading lap data...")
 
     laps = pd.read_parquet(LAP_DATA_FILE)
 
-    # Csak az érintett körök
+    # Affected laps only
     affected_laps = laps[
         laps["lap_number"].between(53, 58)
     ].copy()

@@ -14,9 +14,7 @@ def main():
 
     print(f"Shape: {race_state.shape}")
 
-    # ---------------------------------------------------------
-    # 1. BASIC INFORMATION
-    # ---------------------------------------------------------
+    # --- 1. BASIC INFORMATION ---
 
     print("\n=== BASIC INFORMATION ===")
 
@@ -28,9 +26,7 @@ def main():
         f"{race_state['lap_number'].max()}"
     )
 
-    # ---------------------------------------------------------
-    # 2. DUPLICATE DRIVER/LAP COMBINATIONS
-    # ---------------------------------------------------------
+    # --- 2. DUPLICATE DRIVER/LAP COMBINATIONS ---
 
     print("\n=== DUPLICATES ===")
 
@@ -43,9 +39,7 @@ def main():
         f"{duplicates}"
     )
 
-    # ---------------------------------------------------------
-    # 3. ROWS PER DRIVER
-    # ---------------------------------------------------------
+    # --- 3. ROWS PER DRIVER ---
 
     print("\n=== ROWS PER DRIVER ===")
 
@@ -58,9 +52,7 @@ def main():
 
     print(rows_per_driver.to_string())
 
-    # ---------------------------------------------------------
-    # 4. LAP NUMBER CONSISTENCY
-    # ---------------------------------------------------------
+    # --- 4. LAP NUMBER CONSISTENCY ---
 
     print("\n=== LAP NUMBER CONSISTENCY ===")
 
@@ -104,9 +96,7 @@ def main():
     else:
         print("No lap-number inconsistencies found.")
 
-    # ---------------------------------------------------------
-    # 5. DATE VALIDATION
-    # ---------------------------------------------------------
+    # --- 5. DATE VALIDATION ---
 
     print("\n=== DATE VALIDATION ===")
 
@@ -135,9 +125,7 @@ def main():
         f"date_end before date_start: {invalid_order}"
     )
 
-    # ---------------------------------------------------------
-    # 6. LAP DURATION VALIDATION
-    # ---------------------------------------------------------
+    # --- 6. LAP DURATION VALIDATION ---
 
     print("\n=== LAP DURATION ===")
 
@@ -161,9 +149,7 @@ def main():
         f"{race_state['lap_duration'].mean():.3f} s"
     )
 
-    # ---------------------------------------------------------
-    # 7. POSITION
-    # ---------------------------------------------------------
+    # --- 7. POSITION ---
 
     print("\n=== POSITION ===")
 
@@ -200,9 +186,7 @@ def main():
         f"{len(invalid_position)}"
     )
 
-    # ---------------------------------------------------------
-    # 8. GAP / INTERVAL
-    # ---------------------------------------------------------
+    # --- 8. GAP / INTERVAL ---
 
     print("\n=== GAP / INTERVAL ===")
     print(
@@ -232,9 +216,7 @@ def main():
         .sort_index()
     )
 
-    # ---------------------------------------------------------
-    # 9. TYRE DATA
-    # ---------------------------------------------------------
+    # --- 9. TYRE DATA ---
 
     print("\n=== TYRE DATA ===")
 
@@ -261,9 +243,7 @@ def main():
         f"Negative tyre_age: {negative_tyre_age}"
     )
 
-    # ---------------------------------------------------------
-    # 10. PIT STOPS
-    # ---------------------------------------------------------
+    # --- 10. PIT STOPS ---
 
     print("\n=== PIT STOPS ===")
 
@@ -280,9 +260,7 @@ def main():
 
     print(pit_stops.to_string())
 
-    # ---------------------------------------------------------
-    # 11. WEATHER
-    # ---------------------------------------------------------
+    # --- 11. WEATHER ---
 
     print("\n=== WEATHER ===")
 
@@ -304,9 +282,7 @@ def main():
 
     print(weather_missing.to_string())
 
-    # ---------------------------------------------------------
-    # 12. FINAL SUMMARY
-    # ---------------------------------------------------------
+    # --- 12. FINAL SUMMARY ---
 
     negative_gap = race_state[
         race_state["gap_to_leader"] < 0
