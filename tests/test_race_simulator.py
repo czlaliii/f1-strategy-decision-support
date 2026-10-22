@@ -7,7 +7,7 @@ from src.simulator.race_simulator import MODEL_FEATURES, RaceSimulator, Strategy
 class ConstantPredictor:
     def predict(self, features):
         assert list(features.columns) == MODEL_FEATURES
-        return [80.0]
+        return [80.0] * len(features)
 
 
 def current_state():

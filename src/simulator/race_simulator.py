@@ -1,11 +1,11 @@
 """Deterministic, lap-by-lap simulation from a known race-state snapshot."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
-
-from src.models.gradient_boosting_predictor import predict_next_lap_time
 
 ALLOWED_COMPOUNDS = {"SOFT", "MEDIUM", "HARD"}
 MODEL_FEATURES = [
@@ -86,57 +86,77 @@ class RaceSimulator:
         return default if pd.isna(value) else value
 
     def simulate(self, strategy: Strategy) -> pd.DataFrame:
-        self._validate_strategy(strategy)
-        state = {key: self._numeric(value) for key, value in self.current_state.items()}
-        state["compound"] = str(state["compound"]).upper()
-        cumulative_time = self.starting_cumulative_time
-        records = []
-        pit_to_compound = dict(zip(strategy.pit_laps, strategy.compounds[1:]))
+        return self.simulate_many([strategy])[0]
 
-        # `state` is the information available at the end of its lap. It predicts
+    def simulate_many(self, strategies: Sequence[Strategy]) -> list[pd.DataFrame]:
+        """Simulate strategies in lockstep with one model call per lap.
+
+        Every strategy starts from its own copy of the current state, so the
+        results match separate simulate() calls.
+        """
+        for strategy in strategies:
+            self._validate_strategy(strategy)
+        initial = {key: self._numeric(value) for key, value in self.current_state.items()}
+        initial["compound"] = str(initial["compound"]).upper()
+        states = [dict(initial) for _ in strategies]
+        cumulative_times = [self.starting_cumulative_time] * len(strategies)
+        records = [[] for _ in strategies]
+        pit_plans = [
+            dict(zip(strategy.pit_laps, strategy.compounds[1:]))
+            for strategy in strategies
+        ]
+
+        # Each state is the information available at the end of its lap. It predicts
         # the next lap, then is updated only from the prediction and strategy.
-        while int(state["lap_number"]) < self.race_last_lap:
-            simulated_lap = int(state["lap_number"]) + 1
-            features = pd.DataFrame([{feature: state[feature] for feature in MODEL_FEATURES}])
-            predicted_lap_time = predict_next_lap_time(self.predictor, features)
-            pit_stop = simulated_lap in pit_to_compound
-            pit_loss = self.pit_loss_seconds if pit_stop else 0.0
-            cumulative_time += predicted_lap_time + pit_loss
-
-            compound_after_lap = state["compound"]
-            tyre_age_after_lap = float(state["tyre_age"]) + 1
-            if pit_stop:
-                compound_after_lap = pit_to_compound[simulated_lap]
-                tyre_age_after_lap = 0.0
-
-            records.append(
-                {
-                    "lap_number": simulated_lap,
-                    "driver_number": state["driver_number"],
-                    "position": state["position"],
-                    "compound": state["compound"],
-                    "tyre_age": state["tyre_age"],
-                    "predicted_lap_time": predicted_lap_time,
-                    "pit_stop": pit_stop,
-                    "pit_loss_seconds": pit_loss,
-                    "compound_after_lap": compound_after_lap,
-                    "tyre_age_after_lap": tyre_age_after_lap,
-                    "cumulative_time": cumulative_time,
-                }
+        while states and int(states[0]["lap_number"]) < self.race_last_lap:
+            simulated_lap = int(states[0]["lap_number"]) + 1
+            features = pd.DataFrame(
+                [{feature: state[feature] for feature in MODEL_FEATURES} for state in states]
             )
+            predictions = np.asarray(self.predictor.predict(features), dtype=float)
+            if len(predictions) != len(states):
+                raise ValueError("The predictor must return one value per feature row.")
 
-            previous_lap_time = state["previous_lap_time"]
-            state["lap_number"] = simulated_lap
-            state["compound"] = compound_after_lap
-            state["tyre_age"] = tyre_age_after_lap
-            state["previous_lap_time"] = predicted_lap_time
-            state["lap_time_delta"] = predicted_lap_time - previous_lap_time
-            state["rolling_3_lap_avg"] = (2 * state["rolling_3_lap_avg"] + predicted_lap_time) / 3
-            state["rolling_5_lap_avg"] = (4 * state["rolling_5_lap_avg"] + predicted_lap_time) / 5
-            state["position_change"] = 0.0
-            state["gap_change"] = 0.0
-            state["interval_change"] = 0.0
-            state["laps_since_pit"] = 0.0 if pit_stop else state["laps_since_pit"] + 1
-            state["has_previous_pit"] = 1 if pit_stop else state["has_previous_pit"]
+            for index, (state, pit_to_compound) in enumerate(zip(states, pit_plans)):
+                predicted_lap_time = float(predictions[index])
+                pit_stop = simulated_lap in pit_to_compound
+                pit_loss = self.pit_loss_seconds if pit_stop else 0.0
+                cumulative_times[index] += predicted_lap_time + pit_loss
 
-        return pd.DataFrame(records)
+                compound_after_lap = state["compound"]
+                tyre_age_after_lap = float(state["tyre_age"]) + 1
+                if pit_stop:
+                    compound_after_lap = pit_to_compound[simulated_lap]
+                    tyre_age_after_lap = 0.0
+
+                records[index].append(
+                    {
+                        "lap_number": simulated_lap,
+                        "driver_number": state["driver_number"],
+                        "position": state["position"],
+                        "compound": state["compound"],
+                        "tyre_age": state["tyre_age"],
+                        "predicted_lap_time": predicted_lap_time,
+                        "pit_stop": pit_stop,
+                        "pit_loss_seconds": pit_loss,
+                        "compound_after_lap": compound_after_lap,
+                        "tyre_age_after_lap": tyre_age_after_lap,
+                        "cumulative_time": cumulative_times[index],
+                    }
+                )
+
+                previous_lap_time = state["previous_lap_time"]
+                state["lap_number"] = simulated_lap
+                state["compound"] = compound_after_lap
+                state["tyre_age"] = tyre_age_after_lap
+                state["previous_lap_time"] = predicted_lap_time
+                state["lap_time_delta"] = predicted_lap_time - previous_lap_time
+                state["rolling_3_lap_avg"] = (2 * state["rolling_3_lap_avg"] + predicted_lap_time) / 3
+                state["rolling_5_lap_avg"] = (4 * state["rolling_5_lap_avg"] + predicted_lap_time) / 5
+                state["position_change"] = 0.0
+                state["gap_change"] = 0.0
+                state["interval_change"] = 0.0
+                state["laps_since_pit"] = 0.0 if pit_stop else state["laps_since_pit"] + 1
+                state["has_previous_pit"] = 1 if pit_stop else state["has_previous_pit"]
+
+        return [pd.DataFrame(strategy_records) for strategy_records in records]

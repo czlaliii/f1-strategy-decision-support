@@ -23,20 +23,22 @@ def load_json(filename):
     ) as file:
         return pd.DataFrame(json.load(file))
 
-def main():
-    print("Loading lap data...")
-
-    laps = pd.read_parquet(PROCESSED_PATH)
-
-    print(f"Lap data shape: {laps.shape}")
-
-    # 1. LAP DATA
-
-    laps["date_start"] = pd.to_datetime(
-        laps["date_start"],
+def _to_utc(series):
+    return pd.to_datetime(
+        series,
         utc=True,
         format="mixed"
     ).astype("datetime64[ns, UTC]")
+
+
+def build_race_state(laps, weather, position, intervals):
+    """Attach weather, position and gap data known at each lap end."""
+
+    laps = laps.copy()
+
+    # 1. LAP DATA
+
+    laps["date_start"] = _to_utc(laps["date_start"])
 
     # Lap end timestamp
     laps["date_end"] = (
@@ -45,12 +47,6 @@ def main():
             laps["lap_duration"],
             unit="s"
         )
-    )
-
-    missing_date_end = laps["date_end"].isna().sum()
-
-    print(
-        f"Rows without valid date_end: {missing_date_end}"
     )
 
     laps = laps.dropna(
@@ -62,32 +58,27 @@ def main():
 
     # 2. WEATHER
 
-    weather = load_json("weather.json")
+    weather_columns = [
+        "wind_direction",
+        "rainfall",
+        "air_temperature",
+        "humidity",
+        "pressure",
+        "track_temperature",
+        "wind_speed",
+    ]
 
-    weather["date"] = pd.to_datetime(
-        weather["date"],
-        utc=True,
-        format="mixed"
-    ).astype("datetime64[ns, UTC]")
+    weather = weather.copy()
+    weather["date"] = _to_utc(weather["date"])
 
+    # Pre-race samples are kept so early laps get the latest known weather
+    # without back-filling from later samples.
     weather = weather[
-        (weather["date"] >= race_start) &
-        (weather["date"] <= race_end)
+        weather["date"] <= race_end
     ].copy()
 
-    print(f"Weather rows used: {len(weather)}")
-
     weather = weather[
-        [
-            "date",
-            "wind_direction",
-            "rainfall",
-            "air_temperature",
-            "humidity",
-            "pressure",
-            "track_temperature",
-            "wind_speed",
-        ]
+        ["date"] + weather_columns
     ].copy()
 
     weather = weather.sort_values("date")
@@ -106,35 +97,10 @@ def main():
         columns=["date"]
     )
 
-    # Weather may be NaN at the start
-    weather_columns = [
-        "wind_direction",
-        "rainfall",
-        "air_temperature",
-        "humidity",
-        "pressure",
-        "track_temperature",
-        "wind_speed",
-    ]
-
-    for column in weather_columns:
-        race_state[column] = (
-            race_state[column]
-            .ffill()
-            .bfill()
-        )
-
     # 3. POSITION
 
-    print("Loading position data...")
-
-    position = load_json("position.json")
-
-    position["date"] = pd.to_datetime(
-        position["date"],
-        utc=True,
-        format="mixed"
-    ).astype("datetime64[ns, UTC]")
+    position = position.copy()
+    position["date"] = _to_utc(position["date"])
 
     position = position[
         (position["date"] >= race_start) &
@@ -171,15 +137,8 @@ def main():
 
     # 4. INTERVALS
 
-    print("Loading interval data...")
-
-    intervals = load_json("intervals.json")
-
-    intervals["date"] = pd.to_datetime(
-        intervals["date"],
-        utc=True,
-        format="mixed"
-    ).astype("datetime64[ns, UTC]")
+    intervals = intervals.copy()
+    intervals["date"] = _to_utc(intervals["date"])
 
     intervals = intervals[
         (intervals["date"] >= race_start) &
@@ -203,23 +162,6 @@ def main():
     intervals["interval"] = pd.to_numeric(
         intervals["interval"],
         errors="coerce"
-    )
-
-    print(
-        intervals[
-            (intervals["driver_number"] == 44) &
-            (intervals["date"] <= pd.Timestamp("2026-07-26 13:04:51.255", tz="UTC"))
-        ][
-            [
-                "date",
-                "gap_to_leader_raw",
-                "gap_to_leader",
-                "interval",
-                "laps_down"
-            ]
-        ]
-        .tail(10)
-        .to_string(index=False)
     )
 
     intervals = intervals[
@@ -249,9 +191,24 @@ def main():
 
     # 5. FINAL SORTING
 
-    race_state = race_state.sort_values(
+    return race_state.sort_values(
         ["lap_number", "driver_number"]
     ).reset_index(drop=True)
+
+
+def main():
+    print("Loading lap data...")
+
+    laps = pd.read_parquet(PROCESSED_PATH)
+
+    print(f"Lap data shape: {laps.shape}")
+
+    race_state = build_race_state(
+        laps,
+        load_json("weather.json"),
+        load_json("position.json"),
+        load_json("intervals.json"),
+    )
 
     # 6. SAVE
 

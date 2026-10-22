@@ -5,7 +5,13 @@ from dash.dependencies import Input, Output, State
 
 from src.dashboard.config import PIT_LOSS_SECONDS
 from src.dashboard.replay_service import REPLAY_CACHE, time_to_lap
-from src.simulator.race_simulator import Strategy
+from src.features.race_dataset import RaceDataError, load_race_dataset
+from src.models.expanding_window_model import (
+    InsufficientHistoryError,
+    fill_with_training_medians,
+    load_or_train_model,
+)
+from src.simulator.race_simulator import MODEL_FEATURES, Strategy
 from src.simulator.strategy_comparator import StrategyComparator
 
 SUPPORTED_COMPOUNDS = ("SOFT", "MEDIUM", "HARD")
@@ -25,7 +31,20 @@ def _empty_outputs(message, key=None):
     return message, "Nincs még kiszámítható ajánlás.", [], {"key": key, "status": message}
 
 
-def register_replay_strategy_callbacks(app, dataset, race_state, predictor, race_last_lap):
+# Per-race dataset and model, kept in memory after the first lap.
+_RACE_RESOURCES: dict[tuple[str, int], tuple] = {}
+
+
+def _race_resources(race_folder, session_key):
+    key = (race_folder, int(session_key))
+    if key not in _RACE_RESOURCES:
+        dataset = load_race_dataset(race_folder, int(session_key))
+        model = load_or_train_model(race_folder)
+        _RACE_RESOURCES[key] = (dataset, model)
+    return _RACE_RESOURCES[key]
+
+
+def register_replay_strategy_callbacks(app):
     """Show the best future pit lap/compound and refresh once per replay lap."""
 
     @app.callback(
@@ -49,22 +68,30 @@ def register_replay_strategy_callbacks(app, dataset, race_state, predictor, race
         if replay is None:
             return _empty_outputs("A replay adatai nem találhatók. Töltsd be újra a sessiont.", replay_id)
 
-        # The ML dataset covers Hungary 2026 only; don't apply it to other sessions.
-        event_name = str(replay.get("event_name", ""))
-        session_name = str(replay.get("session_name", ""))
-        is_supported_race = (
-            int(replay.get("year", 0)) == 2026
-            and "hungar" in event_name.lower()
-            and session_name.upper() in {"R", "RACE"}
-        )
-        if not is_supported_race:
+        # Only locally stored races have the raw data needed for the model state.
+        race_folder = replay.get("race_folder")
+        session_key = replay.get("session_key")
+        if not race_folder or session_key is None:
             key = f"{replay_id}|unsupported"
             if (previous_state or {}).get("key") == key:
                 return no_update, no_update, no_update, no_update
             return _empty_outputs(
-                "A körönkénti ajánlás jelenleg a 2026-os Magyar Nagydíj Race sessionhöz érhető el, mert ehhez áll rendelkezésre illesztett tanító- és versenyállapot-adat.",
+                "A stratégiai ajánlás csak helyben letöltött OpenF1 Race sessionhöz érhető el.",
                 key,
             )
+        try:
+            dataset, model = _race_resources(race_folder, session_key)
+        except (InsufficientHistoryError, RaceDataError) as error:
+            key = f"{replay_id}|no-model"
+            if (previous_state or {}).get("key") == key:
+                return no_update, no_update, no_update, no_update
+            return _empty_outputs(
+                f"Ehhez a versenyhez nem készíthető modell: {error}",
+                key,
+            )
+        predictor = model.pipeline
+        # Final lap from the data; equals the scheduled distance unless the race was shortened.
+        race_last_lap = int(pd.to_numeric(dataset["lap_number"], errors="coerce").max())
 
         if not replay_driver:
             return _empty_outputs("Válassz versenyzőt a stratégiai elemzéshez.", replay_id)
@@ -93,7 +120,7 @@ def register_replay_strategy_callbacks(app, dataset, race_state, predictor, race
                 f"A {replay_driver} versenyzőhöz nincs modellállapot a {current_lap}. körre. Az ajánlás ezért nem számítható ki biztonságosan.",
                 cache_key,
             )
-        initial_state = state_rows.iloc[0]
+        initial_state = fill_with_training_medians(predictor, state_rows.iloc[0][MODEL_FEATURES])
         current_compound = str(initial_state.get("compound", "UNKNOWN")).upper()
         if current_compound not in SUPPORTED_COMPOUNDS:
             return _empty_outputs(
@@ -103,9 +130,8 @@ def register_replay_strategy_callbacks(app, dataset, race_state, predictor, race
         if current_lap >= int(race_last_lap) - 1:
             return _empty_outputs("A verseny végéhez közel már nincs értelmezhető jövőbeli bokszkör.", cache_key)
 
-        cumulative_rows = race_state.loc[
-            (pd.to_numeric(race_state["driver_number"], errors="coerce") == driver_number)
-            & (pd.to_numeric(race_state["lap_number"], errors="coerce") <= current_lap),
+        cumulative_rows = driver_data.loc[
+            pd.to_numeric(driver_data["lap_number"], errors="coerce") <= current_lap,
             "lap_duration",
         ]
         starting_cumulative_time = float(pd.to_numeric(cumulative_rows, errors="coerce").fillna(0).sum())
@@ -160,8 +186,12 @@ def register_replay_strategy_callbacks(app, dataset, race_state, predictor, race
                     "predicted_remaining_race_time": _format_race_time(row["predicted_remaining_race_time"]),
                     "predicted_total_race_time": _format_race_time(row["predicted_total_race_time"]),
                 })
+            history = (
+                f"a modell {len(model.training_races)} korábbi versenyen tanult "
+                f"(utolsó: {model.training_races[-1]})"
+            )
             return (
-                f"{replay_driver} · aktuális kör: {current_lap} · az ajánlás a kör állapotából újraszámolva.",
+                f"{replay_driver} · aktuális kör: {current_lap} · {history}.",
                 summary,
                 table,
                 {"key": cache_key, "status": "ok"},

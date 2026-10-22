@@ -10,9 +10,10 @@ class RecordingPredictor:
         self.first_feature_rows = []
 
     def predict(self, features):
-        if not self.first_feature_rows or features.iloc[0]["lap_number"] == 50:
-            self.first_feature_rows.append(features.iloc[0].copy())
-        return [80.0]
+        for _, row in features.iterrows():
+            if row["lap_number"] == 50:
+                self.first_feature_rows.append(row.copy())
+        return [80.0] * len(features)
 
 
 def initial_state():

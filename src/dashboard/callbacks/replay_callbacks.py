@@ -119,6 +119,7 @@ def register_replay_callbacks(app):
             )
         try:
             local_race = None
+            race_folder = local_session_key = None
             if session_name == "R":
                 local_race = _local_race_folder_for_selection(
                     int(year),
@@ -165,6 +166,9 @@ def register_replay_callbacks(app):
                 "year": int(year),
                 "event_name": str(event_name),
                 "session_name": str(session_name),
+                # Set only for locally stored races; used by the strategy advisor.
+                "race_folder": race_folder,
+                "session_key": local_session_key,
             }
             data = {"replay_id": replay_id}
             max_lap = max(

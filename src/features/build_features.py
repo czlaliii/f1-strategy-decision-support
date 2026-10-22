@@ -11,12 +11,8 @@ OUTPUT_PATH = Path(
     "data/processed/hungary_2026/features.parquet"
 )
 
-def main():
-    print("Loading race state...")
-
-    df = pd.read_parquet(INPUT_PATH)
-
-    print(f"Race state shape: {df.shape}")
+def add_lap_features(df):
+    """Add past-lap features and the next_lap_time target per driver."""
 
     # 1. SORT DATA
 
@@ -147,9 +143,19 @@ def main():
 
     # 11. REMOVE HELPER COLUMN
 
-    df = df.drop(
+    return df.drop(
         columns=["last_pit_lap"]
     )
+
+
+def main():
+    print("Loading race state...")
+
+    df = pd.read_parquet(INPUT_PATH)
+
+    print(f"Race state shape: {df.shape}")
+
+    df = add_lap_features(df)
 
     # 12. SAVE
 

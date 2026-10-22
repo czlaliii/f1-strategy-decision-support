@@ -46,31 +46,29 @@ def build_stint_mapping(stints: pd.DataFrame) -> pd.DataFrame:
                 ),
             })
 
-        mapping = pd.DataFrame(rows)
+    mapping = pd.DataFrame(
+        rows,
+        columns=["driver_number", "lap_number", "stint_number", "compound", "tyre_age"],
+    )
 
-        mapping = (
-            mapping
-            .sort_values(["driver_number", "lap_number", "stint_number"])
-            .drop_duplicates(
-                subset=["driver_number", "lap_number"],
-                keep="last",
-            )
+    mapping = (
+        mapping
+        .sort_values(["driver_number", "lap_number", "stint_number"])
+        .drop_duplicates(
+            subset=["driver_number", "lap_number"],
+            keep="last",
         )
+    )
 
-        return mapping
+    return mapping
 
 
-def main():
-
-    print("Loading data...")
-
-    laps = load_json("laps.json")
-    stints = load_json("stints.json")
-    pit = load_json("pit.json")
-
-    print(f"Laps: {len(laps)}")
-    print(f"Stints: {len(stints)}")
-    print(f"Pit stops: {len(pit)}")
+def build_lap_data(
+    laps: pd.DataFrame,
+    stints: pd.DataFrame,
+    pit: pd.DataFrame,
+) -> pd.DataFrame:
+    """Join laps with stint compound/tyre age and a pit stop flag."""
 
     # --- STINT MAPPING ---
 
@@ -86,33 +84,53 @@ def main():
 
     # --- PIT STOP FLAG ---
 
-    pit_flags = (
-        pit[
-            ["driver_number", "lap_number"]
-        ]
-        .drop_duplicates()
-        .assign(pit_stop=True)
-    )
+    if {"driver_number", "lap_number"}.issubset(pit.columns):
+        pit_flags = (
+            pit[
+                ["driver_number", "lap_number"]
+            ]
+            .drop_duplicates()
+            .assign(pit_stop=True)
+        )
 
-    lap_data = lap_data.merge(
-        pit_flags,
-        on=["driver_number", "lap_number"],
-        how="left"
-    )
+        lap_data = lap_data.merge(
+            pit_flags,
+            on=["driver_number", "lap_number"],
+            how="left"
+        )
 
-    lap_data["pit_stop"] = (
-        lap_data["pit_stop"]
-        .fillna(False)
-    )
+        lap_data["pit_stop"] = (
+            lap_data["pit_stop"]
+            .astype("boolean")
+            .fillna(False)
+            .astype(bool)
+        )
+    else:
+        lap_data["pit_stop"] = False
 
     # --- SORT ---
 
-    lap_data = lap_data.sort_values(
+    return lap_data.sort_values(
         [
             "driver_number",
             "lap_number"
         ]
     ).reset_index(drop=True)
+
+
+def main():
+
+    print("Loading data...")
+
+    laps = load_json("laps.json")
+    stints = load_json("stints.json")
+    pit = load_json("pit.json")
+
+    print(f"Laps: {len(laps)}")
+    print(f"Stints: {len(stints)}")
+    print(f"Pit stops: {len(pit)}")
+
+    lap_data = build_lap_data(laps, stints, pit)
 
     # --- SAVE ---
 

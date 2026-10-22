@@ -31,13 +31,7 @@ def create_app():
     app.layout = build_layout(YEARS, drivers, race_last_lap)
     register_session_callbacks(app)
     register_replay_callbacks(app)
-    register_replay_strategy_callbacks(
-        app,
-        dataset=dataset,
-        race_state=race_state,
-        predictor=predictor,
-        race_last_lap=race_last_lap,
-    )
+    register_replay_strategy_callbacks(app)
     register_strategy_callbacks(
         app,
         dataset=dataset,

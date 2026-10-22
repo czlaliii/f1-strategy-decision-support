@@ -33,15 +33,16 @@ class StrategyComparator:
         if not strategies:
             raise ValueError("At least one strategy is required for comparison.")
 
+        simulations = RaceSimulator(
+            predictor=self.predictor,
+            current_state=initial_state,
+            race_last_lap=self.race_last_lap,
+            pit_loss_seconds=self.pit_loss_seconds,
+            starting_cumulative_time=starting_cumulative_time,
+        ).simulate_many(strategies)
+
         records = []
-        for index, strategy in enumerate(strategies, start=1):
-            simulation = RaceSimulator(
-                predictor=self.predictor,
-                current_state=initial_state,
-                race_last_lap=self.race_last_lap,
-                pit_loss_seconds=self.pit_loss_seconds,
-                starting_cumulative_time=starting_cumulative_time,
-            ).simulate(strategy)
+        for index, (strategy, simulation) in enumerate(zip(strategies, simulations), start=1):
             total_time = float(simulation["cumulative_time"].iloc[-1])
             records.append(
                 {
