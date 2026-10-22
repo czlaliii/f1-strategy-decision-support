@@ -166,15 +166,19 @@ def _build_fastf1_track(session, raw_telemetry):
     return track
 
 
-def _build_local_track(replay, sample_count=800):
-    """Robusztus pályavonalat épít több teljes kör koordinátáinak mediánjából.
+def _build_local_track(replay):
+    """Pályavonalat választ egyetlen, teljes repülő kör koordinátáiból.
 
-    Minden használható kört a megtett geometriai távolság mentén azonos
-    számú pontra mintavételezünk. Az azonos relatív pályapozíciók X/Y
-    koordinátáinak mediánja csökkenti az egyedi hiányok és a boxkiállásos
-    körök hatását.
+    Az 1. kör a rajtrácsról indul, a boxba be- és kihajtó körök pedig a
+    boxutcán haladnak, ezért ezek nem írják le a teljes fő pályát. A többi
+    kör közül azt választjuk, amelynek zárt körvonalában a legkisebb a
+    legnagyobb hézag két egymást követő minta között (az utolsó és az első
+    pont közötti zárószakaszt is beleértve). Így a hiányos mintavételű,
+    sérült koordinátájú vagy félbemaradt körök kiesnek.
+    Az OpenF1 x/y koordinátái nem méterben vannak, ezért abszolút
+    távolságküszöböt szándékosan nem használunk.
     """
-    normalized_laps = []
+    candidates = []
 
     for number, driver_laps in replay.laps.items():
         location_df = replay.locations.get(number)
@@ -182,18 +186,27 @@ def _build_local_track(replay, sample_count=800):
             continue
 
         location_df = location_df.sort_values("date")
-        valid_laps = driver_laps.dropna(
-            subset=["date_start", "lap_duration"]
-        )
+        driver_laps = driver_laps.sort_values("lap_number")
+        if "is_pit_out_lap" in driver_laps.columns:
+            pit_out = driver_laps["is_pit_out_lap"].fillna(False).astype(bool)
+        else:
+            pit_out = pd.Series(False, index=driver_laps.index)
+        # A boxkiállás előtti kör (in-lap) a boxutcában ér véget.
+        pit_in = pit_out.shift(-1, fill_value=False)
 
-        for _, lap in valid_laps.iterrows():
-            lap_start = lap["date_start"]
-            duration = pd.to_numeric(lap["lap_duration"], errors="coerce")
-            if pd.isna(duration) or duration < 30 or duration > 200:
+        for index, lap in driver_laps.iterrows():
+            if lap["lap_number"] <= 1 or pit_out[index] or pit_in[index]:
                 continue
-            lap_end = lap_start + pd.to_timedelta(float(duration), unit="s")
+            duration = pd.to_numeric(lap["lap_duration"], errors="coerce")
+            if pd.isna(lap["date_start"]) or pd.isna(duration):
+                continue
+            if duration < 30 or duration > 200:
+                continue
+            lap_end = lap["date_start"] + pd.to_timedelta(
+                float(duration), unit="s"
+            )
             lap_locations = location_df.loc[
-                (location_df["date"] >= lap_start)
+                (location_df["date"] >= lap["date_start"])
                 & (location_df["date"] <= lap_end)
             ]
             points = _prepare_track_coordinates(
@@ -202,106 +215,22 @@ def _build_local_track(replay, sample_count=800):
             if len(points) < 50:
                 continue
 
-            # Csak egymást követő azonos pontokat távolítunk el, hogy a
-            # körvonal sorrendje megmaradjon.
             xy = points[["X", "Y"]].to_numpy(dtype=float)
-            step_lengths = np.sqrt(np.sum(np.diff(xy, axis=0) ** 2, axis=1))
-            keep = np.r_[True, step_lengths > 0.01]
-            xy = xy[keep]
-            if len(xy) < 50:
-                continue
+            closed_xy = np.vstack([xy, xy[:1]])
+            step_lengths = np.hypot(*np.diff(closed_xy, axis=0).T)
+            candidates.append((step_lengths.max(), points))
 
-            step_lengths = np.sqrt(np.sum(np.diff(xy, axis=0) ** 2, axis=1))
-            cumulative_distance = np.r_[0.0, np.cumsum(step_lengths)]
-            total_distance = cumulative_distance[-1]
-            # Kiszűrjük az egyértelműen hibás vagy töredékes köröket.
-            if not 1000 <= total_distance <= 20000:
-                continue
-            if np.any(np.diff(cumulative_distance) <= 0):
-                continue
-
-            target_distance = np.linspace(0.0, total_distance, sample_count)
-            resampled = np.column_stack((
-                np.interp(target_distance, cumulative_distance, xy[:, 0]),
-                np.interp(target_distance, cumulative_distance, xy[:, 1]),
-            ))
-            normalized_laps.append(resampled)
-
-    if not normalized_laps:
-        # Tartalék megoldás: ha a mediános rekonstrukció szigorú
-        # feltételei nem teljesülnek, használjuk a korábbi, egyszerű
-        # módszert, amely az első elegendően mintázott körből rajzol.
-        for number, driver_laps in replay.laps.items():
-            location_df = replay.locations.get(number)
-            if location_df is None or location_df.empty:
-                continue
-
-            valid_laps = driver_laps.dropna(
-                subset=["date_start", "lap_duration"]
-            )
-            for _, lap in valid_laps.iterrows():
-                lap_start = lap["date_start"]
-                duration = pd.to_numeric(
-                    lap["lap_duration"], errors="coerce"
-                )
-                if pd.isna(duration) or duration <= 0:
-                    continue
-                lap_end = lap_start + pd.to_timedelta(
-                    float(duration), unit="s"
-                )
-                lap_locations = location_df.loc[
-                    (location_df["date"] >= lap_start)
-                    & (location_df["date"] <= lap_end)
-                ]
-                track = _prepare_track_coordinates(
-                    lap_locations, x_column="x", y_column="y"
-                )
-                if len(track) >= 20:
-                    return track.reset_index(drop=True)
-
+    if not candidates:
         raise ValueError(
-            "Nem sikerült pályavonalat előállítani a helyi adatokból. "
-            "A mediános rekonstrukció és a korábbi tartalék módszer is "
-            "üres eredményt adott."
+            "Nem sikerült pályavonalat előállítani a helyi adatokból: "
+            "nincs olyan teljes kör, amelyhez elegendő koordináta tartozik."
         )
 
-    # A koordinátánkénti medián robusztusabb, mint egyetlen kör kiválasztása:
-    # a több körben közös pályavonal megmarad, az egyedi eltérések mérséklődnek.
-    stacked = np.stack(normalized_laps, axis=0)
-    median_xy = np.median(stacked, axis=0)
-    track = pd.DataFrame(median_xy, columns=["X", "Y"])
-    track = track.dropna().drop_duplicates().reset_index(drop=True)
+    _, track = min(candidates, key=lambda candidate: candidate[0])
 
-    if len(track) < 50:
-        # A mediános eredmény túl rövid: próbáljuk meg az eredeti módszert.
-        for number, driver_laps in replay.laps.items():
-            location_df = replay.locations.get(number)
-            if location_df is None or location_df.empty:
-                continue
-            valid_laps = driver_laps.dropna(
-                subset=["date_start", "lap_duration"]
-            )
-            for _, lap in valid_laps.iterrows():
-                lap_start = lap["date_start"]
-                duration = pd.to_numeric(
-                    lap["lap_duration"], errors="coerce"
-                )
-                if pd.isna(duration) or duration <= 0:
-                    continue
-                lap_end = lap_start + pd.to_timedelta(
-                    float(duration), unit="s"
-                )
-                lap_locations = location_df.loc[
-                    (location_df["date"] >= lap_start)
-                    & (location_df["date"] <= lap_end)
-                ]
-                fallback_track = _prepare_track_coordinates(
-                    lap_locations, x_column="x", y_column="y"
-                )
-                if len(fallback_track) >= 20:
-                    return fallback_track.reset_index(drop=True)
-        raise ValueError("A pályavonal túl rövid, és a tartalék módszer sem talált használható kört.")
-    return track
+    # A kör első és utolsó mintája között a célegyenesen egy mintavételnyi
+    # rés marad; az első pont megismétlésével a vonal zárttá válik.
+    return pd.concat([track, track.iloc[[0]]], ignore_index=True)
 
 
 def load_session_data(year, event_name, session_name):
