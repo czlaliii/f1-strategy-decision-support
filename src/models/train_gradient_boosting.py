@@ -1,0 +1,291 @@
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+
+DATA_PATH = "data/processed/hungary_2026/ml_dataset_clean.parquet"
+MODEL_PATH = Path("data/processed/hungary_2026/models/gradient_boosting_pipeline.joblib")
+
+TRAIN_LAST_LAP = 50
+
+def main():
+    print("Loading cleaned ML dataset...")
+
+    df = pd.read_parquet(DATA_PATH)
+
+    print(f"Dataset shape: {df.shape}")
+
+    # SORT DATA
+
+    df = df.sort_values(
+        ["lap_number", "driver_number"]
+    ).reset_index(drop=True)
+
+    # TRAIN / VALIDATION SPLIT
+
+    train_df = df[
+        df["lap_number"] <= TRAIN_LAST_LAP
+    ].copy()
+
+    validation_df = df[
+        df["lap_number"] > TRAIN_LAST_LAP
+    ].copy()
+
+    print("\n=== DATA SPLIT ===")
+
+    print(f"Training rows:   {len(train_df)}")
+    print(f"Validation rows: {len(validation_df)}")
+
+    print(
+        f"Training laps:   "
+        f"{train_df['lap_number'].min()} - "
+        f"{train_df['lap_number'].max()}"
+    )
+
+    print(
+        f"Validation laps: "
+        f"{validation_df['lap_number'].min()} - "
+        f"{validation_df['lap_number'].max()}"
+    )
+
+    # FEATURES
+
+    # Ezeket az adatokat ismeri a rendszer az aktuális
+    # Race State időpontjában.
+
+    # next_lap_time NEM kerül az X-be, mert ez a target.
+
+    # A VSC feature-ök az aktuális, már befejezett kör
+    # során történt VSC eseményt írják le.
+
+    # Ezért ezek használhatók a következő kör
+    # idejének előrejelzéséhez.
+
+    feature_columns = [
+        "driver_number",
+        "lap_number",
+        "compound",
+        "tyre_age",
+        "position",
+        "gap_to_leader",
+        "laps_down",
+        "interval",
+        "previous_lap_time",
+        "rolling_3_lap_avg",
+        "rolling_5_lap_avg",
+        "lap_time_delta",
+        "position_change",
+        "gap_change",
+        "interval_change",
+        "laps_since_pit",
+        "track_air_temp_difference",
+        "air_temperature",
+        "track_temperature",
+        "rainfall",
+        "humidity",
+        "wind_speed",
+
+        # VSC features
+        "vsc_duration_in_lap",
+        "vsc_in_lap",
+        "vsc_lap_fraction",
+        "vsc_active_at_end",
+
+        # Missing-value indicators
+        "position_missing",
+        "interval_missing",
+        "interval_change_missing",
+        "has_previous_pit",
+        "gap_to_leader_missing",
+        "gap_change_missing",
+        "previous_lap_time_missing",
+        "rolling_3_lap_avg_missing",
+        "rolling_5_lap_avg_missing",
+        "lap_time_delta_missing",
+        "position_change_missing",
+    ]
+
+    target_column = "next_lap_time"
+
+    X_train = train_df[feature_columns]
+    y_train = train_df[target_column]
+
+    X_validation = validation_df[feature_columns]
+    y_validation = validation_df[target_column]
+
+    # FEATURE TYPES
+
+    categorical_features = [
+        "compound"
+    ]
+
+    numerical_features = [
+        column
+        for column in feature_columns
+        if column not in categorical_features
+    ]
+
+    # PREPROCESSING
+
+    numerical_pipeline = Pipeline(
+        steps=[
+            (
+                "imputer",
+                SimpleImputer(strategy="median")
+            )
+        ]
+    )
+
+    categorical_pipeline = Pipeline(
+        steps=[
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="most_frequent"
+                )
+            ),
+            (
+                "onehot",
+                OneHotEncoder(
+                    handle_unknown="ignore",
+                    sparse_output=False
+                )
+            )
+        ]
+    )
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            (
+                "numerical",
+                numerical_pipeline,
+                numerical_features
+            ),
+            (
+                "categorical",
+                categorical_pipeline,
+                categorical_features
+            )
+        ]
+    )
+
+    # MODEL
+
+    model = Pipeline(
+        steps=[
+            (
+                "preprocessor",
+                preprocessor
+            ),
+            (
+                "regressor",
+                HistGradientBoostingRegressor(
+                    max_iter=300,
+                    learning_rate=0.05,
+                    max_leaf_nodes=15,
+                    l2_regularization=1.0,
+                    random_state=42
+                )
+            )
+        ]
+    )
+
+    # TRAIN
+
+    print("\n=== TRAINING ===")
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    print(
+        "Gradient Boosting training completed."
+    )
+
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, MODEL_PATH)
+    print(f"Trained pipeline saved to: {MODEL_PATH}")
+
+    # PREDICTION
+
+    y_pred = model.predict(
+        X_validation
+    )
+
+    # METRICS
+
+    mae = mean_absolute_error(
+        y_validation,
+        y_pred
+    )
+
+    rmse = np.sqrt(
+        mean_squared_error(
+            y_validation,
+            y_pred
+        )
+    )
+
+    r2 = r2_score(
+        y_validation,
+        y_pred
+    )
+
+    # RESULTS
+
+    print("\n=== GRADIENT BOOSTING + VSC RESULTS ===")
+
+    print(f"MAE:  {mae:.3f} s")
+    print(f"RMSE: {rmse:.3f} s")
+    print(f"R^2:  {r2:.3f}")
+
+    print(
+        f"\nValidation samples: "
+        f"{len(y_validation)}"
+    )
+
+    # COMPARISON
+
+    print("\n=== MODEL COMPARISON ===")
+
+    print(
+        "Previous Lap Time MAE: "
+        "3.682 s"
+    )
+
+    print(
+        "Rolling 3 Lap Average MAE: "
+        "3.627 s"
+    )
+
+    print(
+        "Linear Regression MAE: "
+        "3.283 s"
+    )
+
+    print(
+        "Random Forest MAE: "
+        "3.425 s"
+    )
+
+    print(
+        "Original Gradient Boosting MAE: "
+        "2.641 s"
+    )
+
+    print(
+        f"Gradient Boosting + VSC MAE: "
+        f"{mae:.3f} s"
+    )
+
+
+if __name__ == "__main__":
+    main()
