@@ -17,6 +17,7 @@ from src.dashboard.replay_player import (
     format_lap_time,
     load_local_session_data,
     load_session_data,
+    track_status_at,
 )
 from src.dashboard.replay_service import (
     REPLAY_CACHE,
@@ -25,6 +26,13 @@ from src.dashboard.replay_service import (
     time_to_lap,
 )
 
+
+# Track status banner: label and CSS modifier per race-control state.
+TRACK_STATUS_DISPLAY = {
+    "SC": ("SAFETY CAR", "sc"),
+    "VSC": ("VIRTUAL SAFETY CAR", "vsc"),
+    "RED": ("PIROS ZÁSZLÓ", "red"),
+}
 
 # Seconds of car positions sent ahead per unit of playback speed, and the
 # remaining lead time that triggers the next window.
@@ -175,6 +183,8 @@ def register_replay_callbacks(app):
                 "session_name": str(session_name),
                 "driver_colors": replay.get("driver_colors", {}),
                 "stints": replay.get("stints"),
+                "track_status": replay.get("track_status"),
+                "retirements": replay.get("retirements", {}),
                 # Set only for locally stored races; used by the strategy advisor.
                 "race_folder": race_folder,
                 "session_key": local_session_key,
@@ -331,6 +341,7 @@ def register_replay_callbacks(app):
             laps,
             current_time,
             replay.get("stints"),
+            replay.get("retirements"),
         )
         current_time_text = format_elapsed_time(current_time)
         total_time_text = format_elapsed_time(total_time)
@@ -496,8 +507,10 @@ def register_replay_callbacks(app):
     )
     def draw_track(data):
         """The track line is drawn once per session; cars are animated in the browser."""
-        replay = REPLAY_CACHE.get((data or {}).get("replay_id"))
-        return build_track_figure(replay["track"] if replay else None)
+        replay_id = (data or {}).get("replay_id")
+        replay = REPLAY_CACHE.get(replay_id)
+        # A new revision per session drops the previous session's zoom.
+        return build_track_figure(replay["track"] if replay else None, revision=replay_id)
 
     @app.callback(
         Output("replay-anim-data", "data"),
@@ -527,9 +540,40 @@ def register_replay_callbacks(app):
             replay.get("driver_colors"),
             current_time - 1.0,
             current_time + POSITION_WINDOW_SECONDS * speed,
+            replay.get("retirements"),
         )
         window.update({"replay_id": replay_id, "speed": speed})
         return window
+
+    @app.callback(
+        Output("track-status-banner", "children"),
+        Output("track-status-banner", "className"),
+        Output("track-status-key", "data"),
+        Input("replay-clock-store", "data"),
+        Input("replay-data-store", "data"),
+        State("track-status-key", "data"),
+    )
+    def show_track_status(current_time, data, shown_key):
+        """Race-control state at the replay time; only sent when it changes."""
+        replay = REPLAY_CACHE.get((data or {}).get("replay_id"))
+        if replay is None or current_time is None:
+            key = "none"
+            label, modifier = "Nincs betöltött session", "none"
+        elif replay.get("track_status") is None:
+            key = "unknown"
+            label, modifier = "Pályastátusz: nincs versenyirányítási adat (FastF1)", "none"
+        else:
+            status = track_status_at(replay["track_status"], float(current_time))
+            if status is None:
+                key, label, modifier = "green", "ZÖLD ZÁSZLÓ · szabad verseny", "green"
+            else:
+                label, modifier = TRACK_STATUS_DISPLAY[status["status"]]
+                if status["ending"]:
+                    label += " · befejeződik"
+                key = f"{status['status']}|{status['ending']}"
+        if key == shown_key:
+            return no_update, no_update, no_update
+        return label, f"track-status track-status-{modifier}", key
 
     app.clientside_callback(
         ClientsideFunction(namespace="replay", function_name="sync"),

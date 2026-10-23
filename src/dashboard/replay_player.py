@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
+from src.dashboard.circuit_info import circuit_rotation, rotate_xy
 from src.dashboard.replay_data import ReplayData
 
 SAMPLE_INTERVAL_SECONDS = 0.1
@@ -136,7 +137,135 @@ def _resample_driver(driver_data, timeline):
     )
 
 DEFAULT_DRIVER_COLOR = "#808080"
+# Track map styling (dark, broadcast-like).
+TRACK_MAP_BACKGROUND = "#15151e"
+TRACK_MAP_HEIGHT = 560
+# Gaussian time smoothing of displayed car positions; OpenF1 location samples
+# arrive every 0.16-0.38 s, which makes linearly interpolated motion surge.
+POSITION_SMOOTHING_SECONDS = 0.2
+# Minimum pause in lap starts that marks a red-flag stoppage.
+RED_FLAG_PAUSE_SECONDS = 120.0
 STINT_COLUMNS = ["Driver", "stint_number", "lap_start", "lap_end", "compound", "tyre_age_at_start"]
+
+
+def build_track_status(race_control, start_time, lap_start_seconds=None):
+    """SC, VSC and red-flag periods from race control messages, in replay seconds.
+
+    A period starts with its deployment message and ends with the next
+    track-level TRACK CLEAR/green flag, a session (re)start or the chequered
+    flag. 'SAFETY CAR IN THIS LAP' and 'VSC ENDING' only mark it as ending.
+    A new deployment (e.g. SC -> red flag) replaces the current period.
+    Under a red flag the cars stop, so when the restart message is missing
+    from the feed the red flag ends at the first lap start after a pause of
+    at least RED_FLAG_PAUSE_SECONDS.
+    """
+    if race_control is None or race_control.empty or "message" not in race_control.columns:
+        return []
+    events = race_control.copy()
+    events["date"] = pd.to_datetime(events["date"], utc=True, format="mixed")
+    events = events.dropna(subset=["date"]).sort_values("date")
+    periods, current = [], None
+
+    def close(at):
+        nonlocal current
+        if current is not None:
+            current["end"] = at
+            periods.append(current)
+            current = None
+
+    for _, event in events.iterrows():
+        at = (event["date"] - start_time).total_seconds()
+        message = str(event.get("message", "")).upper()
+        category = str(event.get("category", ""))
+        flag = str(event.get("flag", "")).upper()
+        scope = str(event.get("scope", ""))
+        status = None
+        if category == "SafetyCar":
+            if "VIRTUAL SAFETY CAR DEPLOYED" in message or "VSC DEPLOYED" in message:
+                status = "VSC"
+            elif "SAFETY CAR DEPLOYED" in message:
+                status = "SC"
+            elif current is not None and ("ENDING" in message or "IN THIS LAP" in message):
+                current["ending_from"] = at
+        elif flag == "RED" or (category == "SessionStatus" and "ABORTED" in message):
+            # An aborted session is a red-flag stoppage even without a RED FLAG message.
+            status = "RED"
+        elif flag == "CHEQUERED" or (category == "SessionStatus" and "FINISHED" in message):
+            # Messages after the finish (e.g. a post-race red flag) are not race status.
+            close(at)
+            break
+        elif (
+            "TRACK CLEAR" in message
+            or (flag in ("CLEAR", "GREEN") and scope == "Track")
+            or (category == "SessionStatus" and "STARTED" in message)
+        ):
+            close(at)
+        if status and (current is None or current["status"] != status):
+            close(at)
+            current = {"status": status, "start": at, "end": None, "ending_from": None}
+    close(None)
+    starts = sorted(lap_start_seconds or [])
+    for period in periods:
+        if period["status"] == "RED":
+            # Cars on track still finish their lap after the flag; the restart
+            # is the first lap start that follows a long pause.
+            later = [t for t in starts if t > period["start"]]
+            restart = next(
+                (t for previous, t in zip([period["start"]] + later, later)
+                 if t - previous >= RED_FLAG_PAUSE_SECONDS),
+                None,
+            )
+            if restart is not None and period["end"] is None:
+                period["end"] = restart
+    return periods
+
+
+def track_status_at(periods, current_seconds):
+    """The SC/VSC/red-flag period active at a replay time, or None for green."""
+    for period in periods or []:
+        if period["start"] <= current_seconds and (period["end"] is None or current_seconds < period["end"]):
+            ending = period["ending_from"] is not None and current_seconds >= period["ending_from"]
+            return {"status": period["status"], "ending": ending}
+    return None
+
+
+def find_retirements(laps, finish_seconds=None):
+    """Drivers who stopped before the chequered flag: Driver -> {lap, out_from, hidden_from}.
+
+    A driver retired if their last lap ended (or, if unfinished, started)
+    before the finish. Lapped finishers end their last lap after it.
+    out_from: the next race lap start; the leaderboard marks the retirement.
+    hidden_from: one race lap later; the car stays visible on track until then.
+    """
+    if laps is None or laps.empty:
+        return {}
+    laps = laps.dropna(subset=["LapNumber", "LapStartTime"]).copy()
+    if finish_seconds is None:
+        finish_seconds = float(laps["TimeSeconds"].max())
+    # Start time of every race lap: the first car to begin it.
+    lap_starts = laps.groupby("LapNumber")["LapStartTime"].min().sort_values()
+    # A lap cannot start after the field is 5 laps further on; such timestamps
+    # are feed errors and are replaced by the race start of that lap.
+    by_lap = lap_starts.sort_index()
+    limit = laps["LapNumber"].map(lambda n: by_lap.get(n + 5, np.inf))
+    implausible = laps["LapStartTime"] > limit
+    laps.loc[implausible, "LapStartTime"] = laps.loc[implausible, "LapNumber"].map(by_lap)
+    laps.loc[implausible, "TimeSeconds"] = np.nan
+    ends = laps["TimeSeconds"].where(laps["TimeSeconds"].notna(), laps["LapStartTime"])
+    retirements = {}
+    for driver, driver_laps in laps.assign(end=ends).groupby("Driver"):
+        last = driver_laps.sort_values("LapNumber").iloc[-1]
+        if last["end"] >= finish_seconds - 1.0:
+            continue
+        later = lap_starts[lap_starts > last["end"]].tolist()
+        out_from = later[0] if later else float(last["end"]) + 60.0
+        hidden_from = later[1] if len(later) > 1 else out_from + 120.0
+        retirements[str(driver)] = {
+            "lap": int(last["LapNumber"]),
+            "out_from": float(out_from),
+            "hidden_from": float(hidden_from),
+        }
+    return retirements
 
 
 def tyre_state(stints, current_laps):
@@ -183,6 +312,18 @@ def _fastf1_stints(session_laps):
     stints["tyre_age_at_start"] = (stints["tyre_life_first"] - 1).clip(lower=0)
     stints = stints.rename(columns={"Stint": "stint_number"})
     return stints[STINT_COLUMNS]
+
+
+def _rotate_replay(frames, track, degrees):
+    """Rotate car positions and the track line to the official map orientation."""
+    if not degrees:
+        return frames, track
+    frames = frames.copy()
+    frames["X"], frames["Y"] = rotate_xy(frames["X"], frames["Y"], degrees)
+    if track is not None and not track.empty:
+        track = track.copy()
+        track["X"], track["Y"] = rotate_xy(track["X"], track["Y"], degrees)
+    return frames, track
 
 
 def _team_color(value):
@@ -468,6 +609,11 @@ def load_session_data(year, event_name, session_name):
     )
     # Track building lives in its own function.
     track = _build_fastf1_track(session, raw_telemetry)
+    try:
+        rotation = float(session.get_circuit_info().rotation)
+    except Exception:  # noqa: BLE001 - circuit info is optional; draw unrotated
+        rotation = 0.0
+    frames, track = _rotate_replay(frames, track, rotation)
     driver_colors = {}
     try:
         for _, result in session.results.iterrows():
@@ -486,6 +632,8 @@ def load_session_data(year, event_name, session_name):
         "track": track,
         "driver_colors": driver_colors,
         "stints": stints,
+        "track_status": None,
+        "retirements": find_retirements(laps),
     }
 
 def load_local_session_data(
@@ -752,6 +900,10 @@ def load_local_session_data(
     )
     # Track line from the cleanest full lap (see _build_local_track).
     track = _build_local_track(replay)
+    meeting_key = next(iter(replay.drivers.values()), {}).get("meeting_key")
+    frames, track = _rotate_replay(
+        frames, track, circuit_rotation(meeting_key, replay.start_time.year)
+    )
     driver_colors = {
         str(driver.get("name_acronym", number)): color
         for number, driver in replay.drivers.items()
@@ -767,12 +919,29 @@ def load_local_session_data(
         stints = stints.reindex(columns=STINT_COLUMNS)
     else:
         stints = pd.DataFrame(columns=STINT_COLUMNS)
+    control_path = replay.data_dir / "race_control.json"
+    race_control = pd.read_json(control_path) if control_path.exists() else pd.DataFrame()
+    if "session_key" in race_control.columns:
+        race_control = race_control.loc[
+            pd.to_numeric(race_control["session_key"], errors="coerce") == replay.session_key
+        ]
+    finish_seconds = None
+    if {"flag", "date"}.issubset(race_control.columns):
+        chequered = pd.to_datetime(
+            race_control.loc[race_control["flag"] == "CHEQUERED", "date"], utc=True, format="mixed"
+        )
+        if not chequered.empty:
+            finish_seconds = (chequered.min() - replay.start_time).total_seconds()
     return {
         "laps": laps,
         "frames": frames,
         "track": track,
         "driver_colors": driver_colors,
         "stints": stints,
+        "track_status": build_track_status(
+            race_control, replay.start_time, laps["LapStartTime"].dropna().tolist()
+        ),
+        "retirements": find_retirements(laps, finish_seconds),
     }
 
 def build_current_snapshot(frames_by_driver, current_time_seconds):
@@ -796,7 +965,7 @@ def build_current_snapshot(frames_by_driver, current_time_seconds):
         return pd.DataFrame()
     return pd.DataFrame(rows).reset_index(drop=True)
 
-def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
+def build_leaderboard(current_frames, laps, current_time_seconds, stints=None, retirements=None):
     """Build the leaderboard from the current replay state.
 
     Order is estimated from lap number, then distance within the lap;
@@ -811,6 +980,7 @@ def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
         "Compound",
         "TyreLife",
         "Stint",
+        "Status",
     ]
     if (
         current_frames is None
@@ -819,7 +989,12 @@ def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
     ):
         return pd.DataFrame(columns=columns)
     current_time = float(current_time_seconds)
-    latest = current_frames.copy()
+    # Retired drivers leave the running order and are listed at the bottom.
+    retired = {
+        driver: info for driver, info in (retirements or {}).items()
+        if info["out_from"] <= current_time
+    }
+    latest = current_frames.loc[~current_frames["Driver"].isin(list(retired))].copy()
     if latest.empty:
         return pd.DataFrame(columns=columns)
     latest["LapNumber"] = pd.to_numeric(
@@ -890,7 +1065,29 @@ def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
         "Compound": latest["Compound"],
         "TyreLife": latest["TyreLife"],
         "Stint": latest["Stint"] if "Stint" in latest.columns else np.nan,
+        "Status": "",
     })
+    if retired:
+        last_times = {}
+        if laps is not None and not laps.empty:
+            finished = laps.dropna(subset=["LapTime"]).sort_values("LapNumber")
+            last_times = finished.groupby("Driver")["LapTime"].last().to_dict()
+        out = pd.DataFrame([
+            {
+                "Position": None,
+                "Driver": driver,
+                "Lap": info["lap"],
+                "LastLapTime": format_lap_time(last_times.get(driver)),
+                "Interval": "–",
+                "Compound": np.nan,
+                "TyreLife": np.nan,
+                "Stint": np.nan,
+                "Status": f"Kiesett ({info['lap']}. kör)",
+            }
+            # Later retirements rank higher, as in the official classification.
+            for driver, info in sorted(retired.items(), key=lambda item: -item[1]["out_from"])
+        ])
+        result = pd.concat([result, out], ignore_index=True)
     # Tyre data from the stint table, counted per lap from tyre_age_at_start.
     if stints is not None and not stints.empty:
         tyres = tyre_state(stints, dict(zip(result["Driver"], result["Lap"])))
@@ -899,32 +1096,36 @@ def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
         )
     return result[columns].reset_index(drop=True)
 
-def build_track_figure(track):
-    """Static track line plus an empty car layer that the browser animates.
+def build_track_figure(track, revision=None):
+    """Track map: static track line plus an empty car layer that the browser animates.
 
-    Trace 1 holds the cars; assets/replay_animation.js updates only that trace,
-    so the figure itself is sent once per loaded session.
+    The car layer is the last trace; assets/replay_animation.js updates only
+    that trace, so the figure itself is sent once per loaded session. The view
+    is framed on the track with a fixed 1:1 aspect; `revision` (one per
+    session) resets any zoom when another session is loaded.
     """
     figure = go.Figure()
     x_range = y_range = None
     if track is not None and not track.empty:
-        figure.add_trace(
-            go.Scatter(
-                x=track["X"],
-                y=track["Y"],
-                mode="lines",
-                name="Pálya",
-                line={"width": 3, "color": "#777777"},
-                hoverinfo="skip",
-            )
-        )
-        # Fixed ranges so moving cars never trigger an autorange jump.
-        pad_x = (track["X"].max() - track["X"].min()) * 0.06
-        pad_y = (track["Y"].max() - track["Y"].min()) * 0.06
-        x_range = [track["X"].min() - pad_x, track["X"].max() + pad_x]
-        y_range = [track["Y"].min() - pad_y, track["Y"].max() + pad_y]
-    else:
-        figure.add_trace(go.Scatter(x=[], y=[], mode="lines", hoverinfo="skip"))
+        x, y = track["X"].to_numpy(dtype=float), track["Y"].to_numpy(dtype=float)
+        # Two layers give the track an outlined, broadcast-style look.
+        for width, color in ((16, "#2b2d3a"), (7, "#c9ced8")):
+            figure.add_trace(go.Scatter(
+                x=x, y=y, mode="lines", hoverinfo="skip",
+                line={"width": width, "color": color, "shape": "spline", "smoothing": 0.6},
+            ))
+        # Start/finish line: a short white bar across the track at the lap start.
+        span = max(x.max() - x.min(), y.max() - y.min())
+        direction = np.array([x[min(3, len(x) - 1)] - x[0], y[min(3, len(y) - 1)] - y[0]])
+        norm = np.hypot(*direction) or 1.0
+        normal = np.array([-direction[1], direction[0]]) / norm * span * 0.018
+        figure.add_trace(go.Scatter(
+            x=[x[0] - normal[0], x[0] + normal[0]], y=[y[0] - normal[1], y[0] + normal[1]],
+            mode="lines", hoverinfo="skip", line={"width": 4, "color": "#ffffff"},
+        ))
+        pad = span * 0.07
+        x_range = [x.min() - pad, x.max() + pad]
+        y_range = [y.min() - pad, y.max() + pad]
     figure.add_trace(
         go.Scatter(
             x=[],
@@ -932,45 +1133,82 @@ def build_track_figure(track):
             mode="markers+text",
             text=[],
             textposition="top center",
+            textfont={"color": "#ffffff", "size": 11, "family": "Inter, Segoe UI, Arial, sans-serif"},
             name="Versenyzők",
             marker={
-                "size": 12,
-                # Team colours with a dark outline so light colours stay visible.
+                "size": 15,
+                # Team colours with a white outline so dark colours stay visible.
                 "color": [],
-                "line": {"width": 1.5, "color": "#1F1F1F"},
+                "line": {"width": 2, "color": "#ffffff"},
             },
             hovertemplate="%{text}<extra></extra>",
         )
     )
     figure.update_layout(
-        title="Pálya és versenyzőpozíciók",
-        xaxis={"visible": False, "scaleanchor": "y", "range": x_range, "autorange": x_range is None},
+        height=TRACK_MAP_HEIGHT,
+        paper_bgcolor=TRACK_MAP_BACKGROUND,
+        plot_bgcolor=TRACK_MAP_BACKGROUND,
+        xaxis={"visible": False, "scaleanchor": "y", "scaleratio": 1, "range": x_range,
+               "autorange": x_range is None},
         yaxis={"visible": False, "range": y_range, "autorange": y_range is None},
         showlegend=False,
-        margin={"l": 10, "r": 10, "t": 40, "b": 10},
-        uirevision="track",
+        margin={"l": 8, "r": 8, "t": 8, "b": 8},
+        dragmode="pan",
+        hoverlabel={"bgcolor": "#22232e", "font": {"color": "#ffffff"}},
+        uirevision=revision or "track",
     )
     return figure
 
 
-def build_position_window(frames_by_driver, driver_colors, start_seconds, end_seconds):
+def _smooth_segments(values, sigma):
+    """Gaussian smoothing within each run of consecutive non-missing samples."""
+    if sigma <= 0:
+        return values
+    radius = int(np.ceil(3 * sigma))
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1) / sigma) ** 2)
+    kernel /= kernel.sum()
+    result = values.copy()
+    present = ~np.isnan(values)
+    edges = np.flatnonzero(np.diff(np.r_[False, present, False].astype(int)))
+    for start, stop in zip(edges[::2], edges[1::2]):
+        segment = values[start:stop]
+        padded = np.pad(segment, radius, mode="edge")
+        result[start:stop] = np.convolve(padded, kernel, mode="valid")
+    return result
+
+
+def build_position_window(frames_by_driver, driver_colors, start_seconds, end_seconds, retirements=None):
     """Car positions on the common timeline between two replay times, for the browser.
 
     Values are on the SAMPLE_INTERVAL_SECONDS grid starting at t0; missing
     samples are None so the browser hides the car instead of guessing.
+    Positions are smoothed in time (display only) to even out the irregular
+    OpenF1 sampling.
     """
     t0 = max(0.0, round(start_seconds / SAMPLE_INTERVAL_SECONDS) * SAMPLE_INTERVAL_SECONDS)
     count = int(round((end_seconds - t0) / SAMPLE_INTERVAL_SECONDS)) + 1
+    sigma = POSITION_SMOOTHING_SECONDS / SAMPLE_INTERVAL_SECONDS
+    margin = int(np.ceil(3 * sigma))
     drivers, colors, xs, ys = [], [], [], []
     for driver, frames in frames_by_driver.items():
+        # Read a margin on both sides so smoothing near the window edges uses real samples.
+        first = t0 - margin * SAMPLE_INTERVAL_SECONDS
+        total = count + 2 * margin
         times = frames["TimeSeconds"].to_numpy(dtype=float)
-        inside = (times >= t0 - 1e-6) & (times <= end_seconds + 1e-6)
-        index = np.rint((times[inside] - t0) / SAMPLE_INTERVAL_SECONDS).astype(int)
-        valid = (index >= 0) & (index < count)
-        x = np.full(count, np.nan)
-        y = np.full(count, np.nan)
-        x[index[valid]] = frames["X"].to_numpy(dtype=float)[inside][valid]
-        y[index[valid]] = frames["Y"].to_numpy(dtype=float)[inside][valid]
+        index = np.rint((times - first) / SAMPLE_INTERVAL_SECONDS).astype(int)
+        valid = (index >= 0) & (index < total)
+        x = np.full(total, np.nan)
+        y = np.full(total, np.nan)
+        x[index[valid]] = frames["X"].to_numpy(dtype=float)[valid]
+        y[index[valid]] = frames["Y"].to_numpy(dtype=float)[valid]
+        x = _smooth_segments(x, sigma)[margin:margin + count]
+        y = _smooth_segments(y, sigma)[margin:margin + count]
+        hidden_from = (retirements or {}).get(str(driver), {}).get("hidden_from")
+        if hidden_from is not None:
+            # Retired cars leave the track from the next race lap.
+            grid = t0 + np.arange(count) * SAMPLE_INTERVAL_SECONDS
+            x[grid >= hidden_from] = np.nan
+            y[grid >= hidden_from] = np.nan
         drivers.append(str(driver))
         colors.append((driver_colors or {}).get(driver, DEFAULT_DRIVER_COLOR))
         xs.append([None if np.isnan(v) else round(float(v), 1) for v in x])

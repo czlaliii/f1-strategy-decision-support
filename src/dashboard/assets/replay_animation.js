@@ -1,21 +1,27 @@
 // Smooth car animation on the replay track.
 // The server sends a window of car positions (0.1 s grid) and the replay
-// clock every 250 ms; here the cars are interpolated between samples and
-// only the car trace (index 1) of the track figure is redrawn, ~30 fps.
+// clock every 250 ms. Here a display clock runs continuously at playback
+// speed and is gently pulled towards the server clock, cars are interpolated
+// between samples, and only the car trace (the last one) is redrawn each frame.
 (function () {
-    var FRAME_MS = 33;
-    // Treat clock changes larger than this many seconds (x speed) as a seek.
+    // Clock differences larger than this many seconds (x speed) are seeks: jump.
     var SEEK_SECONDS = 1.5;
-    // Never run ahead of the last server clock by more than this many seconds (x speed).
-    var MAX_LEAD_SECONDS = 0.6;
+    // Time constant (s) for pulling the display clock towards the server clock.
+    var CORRECTION_SECONDS = 1.0;
+    // The server clock estimate never runs further ahead of its last value (x speed).
+    var MAX_LEAD_SECONDS = 1.0;
+    // Redraws slower than this switch to every second frame, keeping an even rhythm.
+    var SLOW_DRAW_MS = 12;
 
     var state = {
         anchor: null,     // last server clock: {time, at, playing, speed}
         rate: null,       // observed replay seconds per real second
         data: null,       // position window from the server
         shown: null,      // replay time currently drawn
+        lastFrame: null,
         lastDrawn: null,
-        lastDrawAt: 0
+        frameCount: 0,
+        everyOther: false
     };
 
     function sync(clock, paused, speed, data) {
@@ -24,13 +30,12 @@
         var playing = !paused;
         speed = Number(speed) || 1;
         var previous = state.anchor;
-        if (playing && previous && previous.playing && time > previous.time) {
+        if (playing && previous && previous.playing && previous.speed === speed && time > previous.time) {
             var observed = (time - previous.time) / ((now - previous.at) / 1000);
             if (observed > 0 && observed < speed * 3) {
-                state.rate = state.rate === null ? observed : 0.8 * state.rate + 0.2 * observed;
+                state.rate = 0.9 * state.rate + 0.1 * observed;
             }
-        }
-        if (!playing || !previous || previous.speed !== speed) {
+        } else {
             state.rate = speed;
         }
         state.anchor = {time: time, at: now, playing: playing, speed: speed};
@@ -38,19 +43,27 @@
         return window.dash_clientside.no_update;
     }
 
-    function replayTime(now) {
+    function serverEstimate(now) {
         var a = state.anchor;
-        var target = a.time;
-        if (a.playing) {
-            var lead = ((now - a.at) / 1000) * (state.rate || a.speed);
-            target += Math.min(lead, MAX_LEAD_SECONDS * a.speed);
+        if (!a.playing) {
+            return a.time;
         }
-        var shown = state.shown;
-        if (shown === null || !a.playing || Math.abs(target - shown) > SEEK_SECONDS * a.speed) {
+        var lead = ((now - a.at) / 1000) * state.rate;
+        return a.time + Math.min(lead, MAX_LEAD_SECONDS * a.speed);
+    }
+
+    function displayTime(now) {
+        var a = state.anchor;
+        var target = serverEstimate(now);
+        var dt = state.lastFrame === null ? 0 : Math.min((now - state.lastFrame) / 1000, 0.1);
+        state.lastFrame = now;
+        if (state.shown === null || !a.playing || Math.abs(target - state.shown) > SEEK_SECONDS * a.speed) {
             state.shown = target;
         } else {
-            // While playing, small corrections never move the cars backwards.
-            state.shown = Math.max(shown, target);
+            // Advance at playback rate and remove the remaining error smoothly;
+            // the step is never negative, so cars do not move backwards.
+            var step = dt * state.rate + (target - state.shown) * Math.min(1, dt / CORRECTION_SECONDS);
+            state.shown += Math.max(0, step);
         }
         return state.shown;
     }
@@ -88,16 +101,21 @@
 
     function frame(now) {
         window.requestAnimationFrame(frame);
-        if (now - state.lastDrawAt < FRAME_MS || !state.anchor || !state.data || !window.Plotly) {
+        if (!state.anchor || !state.data || !window.Plotly) {
+            return;
+        }
+        var t = displayTime(now);
+        state.frameCount += 1;
+        if (state.everyOther && state.frameCount % 2) {
             return;
         }
         var graph = document.querySelector("#replay-track .js-plotly-plot");
         if (!graph || !graph.data || graph.data.length < 2) {
             return;
         }
-        var t = replayTime(now);
+        var carTrace = graph.data.length - 1;
         // A freshly drawn figure has an empty car trace; redraw even when paused.
-        var empty = !graph.data[1].x || graph.data[1].x.length === 0;
+        var empty = !graph.data[carTrace].x || graph.data[carTrace].x.length === 0;
         if (t === state.lastDrawn && !empty) {
             return;
         }
@@ -105,13 +123,14 @@
         if (!cars) {
             return;
         }
-        state.lastDrawAt = now;
-        state.lastDrawn = t;
+        var started = performance.now();
         window.Plotly.restyle(
             graph,
             {x: [cars.x], y: [cars.y], text: [cars.text], "marker.color": [cars.color]},
-            [1]
+            [carTrace]
         );
+        state.everyOther = performance.now() - started > SLOW_DRAW_MS;
+        state.lastDrawn = t;
     }
 
     window.dash_clientside = Object.assign({}, window.dash_clientside, {

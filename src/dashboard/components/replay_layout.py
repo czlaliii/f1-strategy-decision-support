@@ -16,6 +16,8 @@ def replay_layout():
             dcc.Store(id="replay-anim-anchor"),
             # Last rendered lap table/chart, so they redraw only after a completed lap.
             dcc.Store(id="replay-view-state"),
+            # Last shown track status, so the banner is sent only when it changes.
+            dcc.Store(id="track-status-key"),
             dbc.CardHeader(
                 className="section-heading",
                 children=dbc.Row(
@@ -155,7 +157,24 @@ def replay_layout():
                                     className="replay-panel h-100",
                                     children=[
                                         dbc.CardHeader("POZÍCIÓ A PÁLYÁN", className="mini-panel-header"),
-                                        dbc.CardBody(dcc.Graph(id="replay-track", config={"displaylogo": False, "responsive": True}, className="dashboard-graph"), className="p-2"),
+                                        dbc.CardBody(
+                                            [
+                                                html.Div("Nincs betöltött session", id="track-status-banner", className="track-status track-status-none"),
+                                                dcc.Graph(
+                                                    id="replay-track",
+                                                    # Only zoom in/out and reset; drag pans, double-click resets.
+                                                    config={
+                                                        "displaylogo": False,
+                                                        "responsive": True,
+                                                        "scrollZoom": False,
+                                                        "doubleClick": "reset",
+                                                        "modeBarButtons": [["zoomIn2d", "zoomOut2d", "resetScale2d"]],
+                                                    },
+                                                    className="dashboard-graph track-map",
+                                                ),
+                                            ],
+                                            className="p-2",
+                                        ),
                                     ],
                                 ),
                                 xs=12, xl=8,
@@ -176,6 +195,7 @@ def replay_layout():
                                                     {"name": "Gumi", "id": "Compound"},
                                                     {"name": "Gumikor (kör)", "id": "TyreLife"},
                                                     {"name": "Stint", "id": "Stint"},
+                                                    {"name": "Állapot", "id": "Status"},
                                                 ],
                                                 data=[],
                                                 page_size=22,
@@ -183,7 +203,11 @@ def replay_layout():
                                                 style_table={"overflowX": "auto"},
                                                 style_cell={"padding": "8px", "textAlign": "center", "fontFamily": "inherit", "fontSize": "12px", "border": "none", "borderBottom": "1px solid #e9edf2"},
                                                 style_header={"fontWeight": "700", "backgroundColor": "#f4f6f9", "color": "#4a5568", "border": "none", "fontSize": "11px"},
-                                                style_data_conditional=[{"if": {"filter_query": "{Position} = 1"}, "fontWeight": "bold", "color": "#bd2638"}],
+                                                style_data_conditional=[
+                                                    {"if": {"filter_query": "{Position} = 1"}, "fontWeight": "bold", "color": "#bd2638"},
+                                                    # Retired drivers: greyed out at the bottom of the table.
+                                                    {"if": {"filter_query": "{Status} contains 'Kiesett'"}, "color": "#9aa3af", "backgroundColor": "#f4f5f7", "fontStyle": "italic"},
+                                                ],
                                             ),
                                             className="p-2",
                                         ),

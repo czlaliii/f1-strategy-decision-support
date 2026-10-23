@@ -102,3 +102,17 @@ body {
 .compound-pill { display: inline-block; padding: .15rem .6rem; border-radius: 999px; color: #fff; font-size: .85rem; font-weight: 800; text-shadow: 0 1px 1px rgba(0, 0, 0, .25); }
 .tyre-status-box { padding: .85rem; border: 1px solid var(--line); border-radius: .65rem; background: #f8f9fb; }
 .tyre-wear-bar { height: 1.1rem; margin-top: .35rem; font-weight: 700; }
+
+/* Track status banner (race control) */
+.track-status { margin-bottom: .5rem; padding: .45rem .8rem; border-radius: .55rem; font-size: .8rem; font-weight: 850; letter-spacing: .06em; text-align: center; transition: background-color .3s, color .3s; }
+.track-status-none { background: #f4f6f9; color: var(--muted); }
+.track-status-green { background: #e6f6ec; color: #17733a; }
+.track-status-sc { background: #ffd600; color: #1f1f1f; }
+.track-status-vsc { background: #ffb020; color: #1f1f1f; }
+.track-status-red { background: var(--f1-red); color: #fff; }
+
+/* Track map: dark, rounded, with a minimal light modebar */
+.track-map { overflow: hidden; border-radius: .75rem; background: #15151e; }
+.track-map .modebar { background: transparent !important; }
+.track-map .modebar-btn path { fill: #c9ced8 !important; }
+.track-map .modebar-btn:hover path { fill: #ffffff !important; }
