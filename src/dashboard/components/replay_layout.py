@@ -71,28 +71,68 @@ def replay_layout():
                                     ),
                                     html.Div(
                                         id="live-strategy-summary",
-                                        className="h5 mb-3",
-                                        children="A legjobb bokszkiállási kör és gumikeverék itt fog megjelenni.",
+                                        className="mb-3",
+                                        children="A javasolt kiállási ablak és gumikeverék itt fog megjelenni.",
                                     ),
                                     html.P(
-                                        "A rendszer a replay aktuális körének állapotából újraszámolja a hátralévő bokszkiállási lehetőségeket. Ez történeti adatokra épülő becslés, nem valós idejű csapatutasítás.",
+                                        "A rendszer a replay aktuális körének állapotából újraszámolja a 0, 1 és 2 kiállásos terveket a kétkeverékes szabály figyelembevételével. Ez történeti adatokra épülő modellbecslés, nem valós idejű csapatutasítás.",
                                         className="text-muted small mb-3",
                                     ),
-                                    dash_table.DataTable(
-                                        id="live-strategy-table",
-                                        columns=[
-                                            {"name": "Boksz köre", "id": "pit_laps"},
-                                            {"name": "Gumistratégia", "id": "compounds"},
-                                            {"name": "Hátralévő idő", "id": "predicted_remaining_race_time"},
-                                            {"name": "Becsült teljes idő", "id": "predicted_total_race_time"},
+                                    dbc.Row(
+                                        className="g-3",
+                                        children=[
+                                            dbc.Col(
+                                                [
+                                                    html.Div("ALTERNATÍV TERVEK · DELTA A JAVASOLTHOZ A CÉLIG", className="kpi-label mb-2"),
+                                                    dash_table.DataTable(
+                                                        id="live-strategy-table",
+                                                        columns=[
+                                                            {"name": "Terv", "id": "plan"},
+                                                            {"name": "Kiállás köre", "id": "pit_laps"},
+                                                            {"name": "Delta", "id": "delta"},
+                                                        ],
+                                                        data=[],
+                                                        page_size=8,
+                                                        style_table={"overflowX": "auto"},
+                                                style_cell={"padding": "8px 10px", "textAlign": "left", "fontFamily": "inherit", "fontSize": "13px", "border": "none", "borderBottom": "1px solid #e9edf2", "whiteSpace": "normal"},
+                                                style_header={"fontWeight": "700", "backgroundColor": "#f4f6f9", "color": "#4a5568", "border": "none", "fontSize": "11px"},
+                                                        style_data_conditional=[{"if": {"row_index": 0}, "fontWeight": "700", "color": "#a91f2d"}],
+                                                    ),
+                                                ],
+                                                xs=12, lg=6,
+                                            ),
+                                            dbc.Col(
+                                                [
+                                                    html.Div("GUMI KORA ÉS ÁLLAPOTA", className="kpi-label mb-2"),
+                                                    html.Div(id="live-tyre-status", className="tyre-status-box mb-3"),
+                                                    html.Div("KEVERÉKEK TEMPÓJA · BECSÜLT KÖVETKEZŐ KÖR", className="kpi-label mb-2"),
+                                                    dash_table.DataTable(
+                                                        id="live-compound-table",
+                                                        columns=[
+                                                            {"name": "Szett", "id": "set"},
+                                                            {"name": "Keverék", "id": "compound"},
+                                                            {"name": "Kor", "id": "tyre_age"},
+                                                            {"name": "Köridő", "id": "lap_time"},
+                                                            {"name": "Δ", "id": "delta"},
+                                                        ],
+                                                        data=[],
+                                                        style_table={"overflowX": "auto"},
+                                                style_cell={"padding": "8px 10px", "textAlign": "left", "fontFamily": "inherit", "fontSize": "13px", "border": "none", "borderBottom": "1px solid #e9edf2", "whiteSpace": "normal"},
+                                                style_header={"fontWeight": "700", "backgroundColor": "#f4f6f9", "color": "#4a5568", "border": "none", "fontSize": "11px"},
+                                                    ),
+                                                    html.Div(
+                                                        "Az OpenF1 nem közli a még meglévő gumiszetteket, ezért az új szettek becsült ideje látható.",
+                                                        className="text-muted small mt-2",
+                                                    ),
+                                                ],
+                                                xs=12, lg=6,
+                                            ),
                                         ],
-                                        data=[],
-                                        page_size=5,
-                                        sort_action="native",
-                                        style_table={"overflowX": "auto"},
-                                        style_cell={"padding": "10px 12px", "textAlign": "left", "fontFamily": "inherit", "fontSize": "13px", "border": "none", "borderBottom": "1px solid #e9edf2", "whiteSpace": "normal"},
-                                        style_header={"fontWeight": "700", "backgroundColor": "#f4f6f9", "color": "#4a5568", "border": "none", "fontSize": "11px"},
-                                        style_data_conditional=[{"if": {"row_index": "odd"}, "backgroundColor": "#fafbfc"}],
+                                    ),
+                                    dcc.Graph(
+                                        id="live-pace-dropoff",
+                                        config={"displaylogo": False, "responsive": True},
+                                        className="dashboard-graph mt-3",
                                     ),
                                 ],
                                 className="p-3 p-lg-4",

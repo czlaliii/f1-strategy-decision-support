@@ -42,7 +42,7 @@ from src.features.race_dataset import (
 from src.simulator.race_simulator import MODEL_FEATURES
 
 MODEL_DIR = PROCESSED_ROOT / "expanding_window_models"
-MODEL_VERSION = 3
+MODEL_VERSION = 4
 TARGET = "next_lap_time"
 REFERENCE = "field_pace_ref"
 # Laps over 200 s likely include stoppages or restarts.
@@ -51,6 +51,8 @@ MAX_VALID_LAP_TIME = 200.0
 # treated as SC/VSC or incident laps.
 MAX_RELATIVE_LAP_TIME = 1.07
 MIN_TRAINING_RACES = 3
+# Percentile of observed stint lengths used as a compound's typical tyre life.
+TYRE_LIFE_PERCENTILE = 0.9
 CATEGORICAL_FEATURES = ["compound"]
 
 TYRE_FEATURES = ["compound", "tyre_age"]
@@ -77,6 +79,8 @@ class TrainedModel:
     pipeline: BaseEstimator
     training_races: tuple[str, ...]
     training_rows: int
+    # Typical tyre life in laps per dry compound, from the training races.
+    tyre_life_laps: dict
 
 
 def estimate_tyre_and_fuel_effects(rows: pd.DataFrame) -> dict[str, float]:
@@ -243,17 +247,35 @@ def load_training_data(race_folder: str) -> tuple[pd.DataFrame, list[str]]:
         )
     columns = sorted(set(STRATEGY_FEATURES) | set(MODEL_FEATURES) | {
         TARGET, "lap_duration", "is_racing_lap", "target_is_racing_lap", "race",
-        "laps_remaining",
+        "laps_remaining", "stint_number",
     })
     frames = [frame[columns] for frame in frames]
     return pd.concat(frames, ignore_index=True), used
+
+
+def typical_tyre_life(train: pd.DataFrame) -> dict[str, float]:
+    """TYRE_LIFE_PERCENTILE of the oldest tyre age reached per stint, by compound.
+
+    Final stints end at the flag rather than at the tyre's limit, so a high
+    percentile is used instead of the mean.
+    """
+    stints = (
+        train.dropna(subset=["stint_number", "tyre_age"])
+        .groupby(["race", "driver_number", "stint_number"])
+        .agg(compound=("compound", "first"), life=("tyre_age", "max"))
+    )
+    stints = stints[stints["compound"].isin(DRY_COMPOUNDS)]
+    life = stints.groupby("compound")["life"].quantile(TYRE_LIFE_PERCENTILE) + 1
+    return {compound: float(laps) for compound, laps in life.items()}
 
 
 def train_model(race_folder: str) -> TrainedModel:
     """Fit the strategy model on all usable races before the selected race."""
     train, used = load_training_data(race_folder)
     model = fit_strategy_model(train)
-    return TrainedModel(model, tuple(used), int(len(racing_target_rows(train))))
+    return TrainedModel(
+        model, tuple(used), int(len(racing_target_rows(train))), typical_tyre_life(train)
+    )
 
 
 def load_or_train_model(race_folder: str, retrain: bool = False) -> TrainedModel:
@@ -271,6 +293,7 @@ def load_or_train_model(race_folder: str, retrain: bool = False) -> TrainedModel
                 joblib.load(model_path),
                 tuple(meta["training_races"]),
                 int(meta["training_rows"]),
+                meta["tyre_life_laps"],
             )
 
     model = train_model(race_folder)
@@ -280,6 +303,7 @@ def load_or_train_model(race_folder: str, retrain: bool = False) -> TrainedModel
         "race": race_folder,
         "training_races": list(model.training_races),
         "training_rows": model.training_rows,
+        "tyre_life_laps": model.tyre_life_laps,
         "model_version": MODEL_VERSION,
         "dataset_version": DATASET_VERSION,
         "sklearn_version": sklearn.__version__,

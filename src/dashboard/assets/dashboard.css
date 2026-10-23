@@ -91,3 +91,14 @@ body {
   .dashboard-hero { border-radius: .85rem; }
   .replay-time-display { justify-content: flex-start; }
 }
+
+/* Strategy advisor */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem; }
+.kpi-tile { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: .7rem; background: #f8f9fb; }
+.kpi-label { color: #657184; font-size: .66rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.kpi-value { margin-top: .3rem; color: var(--ink); font-size: 1.35rem; font-weight: 850; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.kpi-sub { margin-top: .15rem; color: var(--muted); font-size: .8rem; }
+.kpi-muted { color: var(--muted); font-size: 1rem; font-weight: 700; }
+.compound-pill { display: inline-block; padding: .15rem .6rem; border-radius: 999px; color: #fff; font-size: .85rem; font-weight: 800; text-shadow: 0 1px 1px rgba(0, 0, 0, .25); }
+.tyre-status-box { padding: .85rem; border: 1px solid var(--line); border-radius: .65rem; background: #f8f9fb; }
+.tyre-wear-bar { height: 1.1rem; margin-top: .35rem; font-weight: 700; }

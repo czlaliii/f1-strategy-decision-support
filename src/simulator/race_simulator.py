@@ -94,91 +94,102 @@ class RaceSimulator:
         return self.simulate_many([strategy])[0]
 
     def simulate_many(self, strategies: Sequence[Strategy]) -> list[pd.DataFrame]:
-        """Simulate strategies in lockstep with one model call per lap.
+        """Simulate strategies in lockstep and return one lap table per strategy.
 
         Every strategy starts from its own copy of the current state, so the
         results match separate simulate() calls.
         """
+        laps = self._run(strategies, keep_laps=True)
+        columns = list(laps[0].keys()) if laps else []
+        return [
+            pd.DataFrame({column: [lap[column][index] for lap in laps] for column in columns})
+            for index in range(len(strategies))
+        ]
+
+    def total_times(self, strategies: Sequence[Strategy]) -> np.ndarray:
+        """Cumulative race time at the final lap for every strategy."""
+        return self._run(strategies, keep_laps=False)
+
+    def _run(self, strategies, keep_laps):
+        """Vectorised core: one row per strategy, one model call per lap."""
         for strategy in strategies:
             self._validate_strategy(strategy)
         initial = {key: self._numeric(value) for key, value in self.current_state.items()}
         initial["compound"] = str(initial["compound"]).upper()
-        states = [dict(initial) for _ in strategies]
-        cumulative_times = [self.starting_cumulative_time] * len(strategies)
-        records = [[] for _ in strategies]
-        pit_plans = [
-            dict(zip(strategy.pit_laps, strategy.compounds[1:]))
-            for strategy in strategies
-        ]
+        count = len(strategies)
+        states = pd.DataFrame({key: [value] * count for key, value in initial.items()})
+        cumulative = np.full(count, self.starting_cumulative_time, dtype=float)
 
+        # lap -> (strategy indices pitting on that lap, compound fitted)
+        pits = {}
+        for index, strategy in enumerate(strategies):
+            for lap, compound in zip(strategy.pit_laps, strategy.compounds[1:]):
+                pits.setdefault(lap, ([], []))
+                pits[lap][0].append(index)
+                pits[lap][1].append(compound)
+
+        laps = []
         # Each state is the information available at the end of its lap. It predicts
         # the next lap, then is updated only from the prediction and strategy.
-        while states and int(states[0]["lap_number"]) < self.race_last_lap:
-            simulated_lap = int(states[0]["lap_number"]) + 1
-            features = pd.DataFrame(
-                [{feature: state[feature] for feature in self.features} for state in states]
-            )
-            predictions = np.asarray(self.predictor.predict(features), dtype=float)
-            if len(predictions) != len(states):
+        lap = int(initial["lap_number"])
+        while count and lap < self.race_last_lap:
+            simulated_lap = lap + 1
+            predictions = np.asarray(self.predictor.predict(states[self.features]), dtype=float)
+            if len(predictions) != count:
                 raise ValueError("The predictor must return one value per feature row.")
 
-            for index, (state, pit_to_compound) in enumerate(zip(states, pit_plans)):
-                predicted_lap_time = float(predictions[index])
-                pit_stop = simulated_lap in pit_to_compound
-                pit_loss = self.pit_loss_seconds if pit_stop else 0.0
-                cumulative_times[index] += predicted_lap_time + pit_loss
+            pit_stop = np.zeros(count, dtype=bool)
+            compound_after = states["compound"].to_numpy(dtype=object).copy()
+            if simulated_lap in pits:
+                indices, compounds = pits[simulated_lap]
+                pit_stop[indices] = True
+                compound_after[indices] = compounds
+            pit_loss = np.where(pit_stop, self.pit_loss_seconds, 0.0)
+            cumulative = cumulative + predictions + pit_loss
+            tyre_age_after = np.where(pit_stop, 0.0, states["tyre_age"].to_numpy(dtype=float) + 1)
 
-                compound_after_lap = state["compound"]
-                tyre_age_after_lap = float(state["tyre_age"]) + 1
-                if pit_stop:
-                    compound_after_lap = pit_to_compound[simulated_lap]
-                    tyre_age_after_lap = 0.0
+            if keep_laps:
+                laps.append({
+                    "lap_number": [simulated_lap] * count,
+                    "driver_number": states["driver_number"].tolist() if "driver_number" in states else [None] * count,
+                    "position": states["position"].tolist() if "position" in states else [None] * count,
+                    "compound": states["compound"].tolist(),
+                    "tyre_age": states["tyre_age"].tolist(),
+                    "predicted_lap_time": predictions.tolist(),
+                    "pit_stop": pit_stop.tolist(),
+                    "pit_loss_seconds": pit_loss.tolist(),
+                    "compound_after_lap": compound_after.tolist(),
+                    "tyre_age_after_lap": tyre_age_after.tolist(),
+                    "cumulative_time": cumulative.tolist(),
+                })
 
-                records[index].append(
-                    {
-                        "lap_number": simulated_lap,
-                        "driver_number": state.get("driver_number"),
-                        "position": state.get("position"),
-                        "compound": state["compound"],
-                        "tyre_age": state["tyre_age"],
-                        "predicted_lap_time": predicted_lap_time,
-                        "pit_stop": pit_stop,
-                        "pit_loss_seconds": pit_loss,
-                        "compound_after_lap": compound_after_lap,
-                        "tyre_age_after_lap": tyre_age_after_lap,
-                        "cumulative_time": cumulative_times[index],
-                    }
-                )
+            self._advance_states(states, simulated_lap, predictions, pit_stop, compound_after, tyre_age_after)
+            lap = simulated_lap
 
-                self._advance_state(
-                    state, simulated_lap, predicted_lap_time, pit_stop,
-                    compound_after_lap, tyre_age_after_lap,
-                )
+        return laps if keep_laps else cumulative
 
-        return [pd.DataFrame(strategy_records) for strategy_records in records]
-
-    def _advance_state(self, state, lap, lap_time, pit_stop, compound, tyre_age):
-        """Move a state to the end of `lap`; history features are updated only if present."""
-        state["lap_number"] = lap
-        state["compound"] = compound
-        state["tyre_age"] = tyre_age
-        if "field_pace_ref" in state:
-            state["field_pace_ref"] = state["field_pace_ref"] - self.fuel_effect_per_lap
-        if "laps_remaining" in state:
-            state["laps_remaining"] = state["laps_remaining"] - 1
-        if "previous_lap_time" in state:
-            previous_lap_time = state["previous_lap_time"]
-            state["previous_lap_time"] = lap_time
-            if "lap_time_delta" in state:
-                state["lap_time_delta"] = lap_time - previous_lap_time
-        if "rolling_3_lap_avg" in state:
-            state["rolling_3_lap_avg"] = (2 * state["rolling_3_lap_avg"] + lap_time) / 3
-        if "rolling_5_lap_avg" in state:
-            state["rolling_5_lap_avg"] = (4 * state["rolling_5_lap_avg"] + lap_time) / 5
+    def _advance_states(self, states, lap, lap_times, pit_stop, compounds, tyre_ages):
+        """Move all states to the end of `lap`; history features are updated only if present."""
+        states["lap_number"] = lap
+        states["compound"] = compounds
+        states["tyre_age"] = tyre_ages
+        if "field_pace_ref" in states:
+            states["field_pace_ref"] = states["field_pace_ref"] - self.fuel_effect_per_lap
+        if "laps_remaining" in states:
+            states["laps_remaining"] = states["laps_remaining"] - 1
+        if "previous_lap_time" in states:
+            previous_lap_time = states["previous_lap_time"].to_numpy(dtype=float)
+            states["previous_lap_time"] = lap_times
+            if "lap_time_delta" in states:
+                states["lap_time_delta"] = lap_times - previous_lap_time
+        if "rolling_3_lap_avg" in states:
+            states["rolling_3_lap_avg"] = (2 * states["rolling_3_lap_avg"] + lap_times) / 3
+        if "rolling_5_lap_avg" in states:
+            states["rolling_5_lap_avg"] = (4 * states["rolling_5_lap_avg"] + lap_times) / 5
         for change in ("position_change", "gap_change", "interval_change"):
-            if change in state:
-                state[change] = 0.0
-        if "laps_since_pit" in state:
-            state["laps_since_pit"] = 0.0 if pit_stop else state["laps_since_pit"] + 1
-        if "has_previous_pit" in state:
-            state["has_previous_pit"] = 1 if pit_stop else state["has_previous_pit"]
+            if change in states:
+                states[change] = 0.0
+        if "laps_since_pit" in states:
+            states["laps_since_pit"] = np.where(pit_stop, 0.0, states["laps_since_pit"] + 1)
+        if "has_previous_pit" in states:
+            states["has_previous_pit"] = np.where(pit_stop, 1, states["has_previous_pit"])
