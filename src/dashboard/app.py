@@ -26,7 +26,8 @@ def create_app():
         .sort_values("driver_number")["driver_number"]
         .tolist()
     )
-    app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+    # update_title=None: the browser tab title stays fixed while callbacks run.
+    app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], update_title=None)
     app.title = "F1 Strategy Simulator"
     app.layout = build_layout(YEARS, drivers, race_last_lap)
     register_session_callbacks(app)

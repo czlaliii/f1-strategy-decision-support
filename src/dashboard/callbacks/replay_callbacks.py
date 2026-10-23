@@ -4,13 +4,14 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-from dash import State, ctx, no_update
+from dash import ClientsideFunction, State, ctx, no_update
 from dash.dependencies import Input, Output
 
 from src.dashboard.config import PROJECT_ROOT
 from src.dashboard.replay_player import (
     build_current_snapshot,
     build_leaderboard,
+    build_position_window,
     build_track_figure,
     format_elapsed_time,
     format_lap_time,
@@ -23,6 +24,12 @@ from src.dashboard.replay_service import (
     lap_to_time,
     time_to_lap,
 )
+
+
+# Seconds of car positions sent ahead per unit of playback speed, and the
+# remaining lead time that triggers the next window.
+POSITION_WINDOW_SECONDS = 15.0
+POSITION_WINDOW_MARGIN_SECONDS = 5.0
 
 
 def records_from_dataframe(df):
@@ -287,32 +294,32 @@ def register_replay_callbacks(app):
         Output("replay-current-time", "children"),
         Output("replay-total-time", "children"),
         Output("leaderboard-table", "data"),
-        Output("replay-track", "figure"),
         Output("replay-current-info", "children"),
         Output("replay-table", "columns"),
         Output("replay-table", "data"),
         Output("replay-chart", "figure"),
+        Output("replay-view-state", "data"),
         Input("replay-data-store", "data"),
         Input("replay-clock-store", "data"),
         Input("replay-driver", "value"),
+        State("replay-view-state", "data"),
     )
-    def update_replay_view(data, current_time, driver):
+    def update_replay_view(data, current_time, driver, view_state):
         if not data or current_time is None:
             return (
-                "00:00:00", "00:00:00", [], {},
-                "Nincs betöltött session.", [], [], {},
+                "00:00:00", "00:00:00", [],
+                "Nincs betöltött session.", [], [], {}, None,
             )
         replay_id = data.get("replay_id")
         replay = REPLAY_CACHE.get(replay_id)
         if replay is None:
             return (
-                "00:00:00", "00:00:00", [], {},
+                "00:00:00", "00:00:00", [],
                 "A replay adatai nem találhatók. Töltsd be újra a sessiont.",
-                [], [], {},
+                [], [], {}, None,
             )
         frames = replay["frames"]
         laps = replay["laps"]
-        track = replay["track"]
         current_time = float(current_time)
         total_time = float(frames["TimeSeconds"].max())
         current_frames = build_current_snapshot(
@@ -325,12 +332,6 @@ def register_replay_callbacks(app):
             current_time,
             replay.get("stints"),
         )
-        track_figure = build_track_figure(
-            current_frames,
-            track,
-            current_time,
-            replay.get("driver_colors"),
-        )
         current_time_text = format_elapsed_time(current_time)
         total_time_text = format_elapsed_time(total_time)
         if driver is None:
@@ -338,11 +339,11 @@ def register_replay_callbacks(app):
                 current_time_text,
                 total_time_text,
                 records_from_dataframe(leaderboard),
-                track_figure,
                 "Válassz versenyzőt.",
                 [],
                 [],
                 {},
+                None,
             )
         driver_laps = laps.loc[
             (laps["Driver"] == driver)
@@ -381,6 +382,19 @@ def register_replay_callbacks(app):
             column for column in preferred_columns
             if column in driver_laps.columns
         ]
+        # The lap table and chart change only when a lap is completed.
+        view_key = f"{replay_id}|{driver}|{len(driver_laps)}"
+        if view_key == view_state:
+            return (
+                current_time_text,
+                total_time_text,
+                records_from_dataframe(leaderboard),
+                info,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+            )
         # Show the latest completed lap first in the table.
         lap_table = (
             driver_laps[available_columns]
@@ -469,9 +483,59 @@ def register_replay_callbacks(app):
             current_time_text,
             total_time_text,
             records_from_dataframe(leaderboard),
-            track_figure,
             info,
             table_columns,
             records_from_dataframe(lap_table),
             chart,
+            view_key,
         )
+
+    @app.callback(
+        Output("replay-track", "figure"),
+        Input("replay-data-store", "data"),
+    )
+    def draw_track(data):
+        """The track line is drawn once per session; cars are animated in the browser."""
+        replay = REPLAY_CACHE.get((data or {}).get("replay_id"))
+        return build_track_figure(replay["track"] if replay else None)
+
+    @app.callback(
+        Output("replay-anim-data", "data"),
+        Input("replay-clock-store", "data"),
+        Input("replay-data-store", "data"),
+        Input("replay-speed", "value"),
+        State("replay-anim-data", "data"),
+    )
+    def send_position_window(current_time, data, speed, window):
+        """Send car positions ahead of the clock; only when the current window runs out."""
+        replay_id = (data or {}).get("replay_id")
+        replay = REPLAY_CACHE.get(replay_id)
+        if replay is None or current_time is None:
+            return None
+        current_time = float(current_time)
+        speed = float(speed or 1)
+        if (
+            window
+            and window.get("replay_id") == replay_id
+            and window.get("speed") == speed
+            and window["start"] <= current_time
+            <= window["end"] - POSITION_WINDOW_MARGIN_SECONDS * speed
+        ):
+            return no_update
+        window = build_position_window(
+            replay["frames_by_driver"],
+            replay.get("driver_colors"),
+            current_time - 1.0,
+            current_time + POSITION_WINDOW_SECONDS * speed,
+        )
+        window.update({"replay_id": replay_id, "speed": speed})
+        return window
+
+    app.clientside_callback(
+        ClientsideFunction(namespace="replay", function_name="sync"),
+        Output("replay-anim-anchor", "data"),
+        Input("replay-clock-store", "data"),
+        Input("replay-interval", "disabled"),
+        Input("replay-speed", "value"),
+        Input("replay-anim-data", "data"),
+    )

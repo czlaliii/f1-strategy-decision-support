@@ -11,6 +11,11 @@ def replay_layout():
         children=[
             dcc.Store(id="replay-data-store"),
             dcc.Store(id="replay-clock-store", data=0.0),
+            # Car positions ahead of the clock and the clock anchor for the browser animation.
+            dcc.Store(id="replay-anim-data"),
+            dcc.Store(id="replay-anim-anchor"),
+            # Last rendered lap table/chart, so they redraw only after a completed lap.
+            dcc.Store(id="replay-view-state"),
             dbc.CardHeader(
                 className="section-heading",
                 children=dbc.Row(

@@ -899,9 +899,14 @@ def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
         )
     return result[columns].reset_index(drop=True)
 
-def build_track_figure(current_frames, track, current_time_seconds, driver_colors=None):
-    """Plotly figure of the track line and current car positions."""
+def build_track_figure(track):
+    """Static track line plus an empty car layer that the browser animates.
+
+    Trace 1 holds the cars; assets/replay_animation.js updates only that trace,
+    so the figure itself is sent once per loaded session.
+    """
     figure = go.Figure()
+    x_range = y_range = None
     if track is not None and not track.empty:
         figure.add_trace(
             go.Scatter(
@@ -913,65 +918,70 @@ def build_track_figure(current_frames, track, current_time_seconds, driver_color
                 hoverinfo="skip",
             )
         )
-    if (
-        current_frames is not None
-        and not current_frames.empty
-        and current_time_seconds is not None
-    ):
-        current = (
-            current_frames.copy()
-            if current_frames is not None
-            else pd.DataFrame()
+        # Fixed ranges so moving cars never trigger an autorange jump.
+        pad_x = (track["X"].max() - track["X"].min()) * 0.06
+        pad_y = (track["Y"].max() - track["Y"].min()) * 0.06
+        x_range = [track["X"].min() - pad_x, track["X"].max() + pad_x]
+        y_range = [track["Y"].min() - pad_y, track["Y"].max() + pad_y]
+    else:
+        figure.add_trace(go.Scatter(x=[], y=[], mode="lines", hoverinfo="skip"))
+    figure.add_trace(
+        go.Scatter(
+            x=[],
+            y=[],
+            mode="markers+text",
+            text=[],
+            textposition="top center",
+            name="Versenyzők",
+            marker={
+                "size": 12,
+                # Team colours with a dark outline so light colours stay visible.
+                "color": [],
+                "line": {"width": 1.5, "color": "#1F1F1F"},
+            },
+            hovertemplate="%{text}<extra></extra>",
         )
-        if not current.empty:
-            current = (
-                current.sort_values("TimeSeconds")
-                .groupby("Driver", as_index=False)
-                .tail(1)
-            )
-            current = current.loc[
-                current["X"].notna()
-                & current["Y"].notna()
-                & (
-                    float(current_time_seconds)
-                    - current["TimeSeconds"]
-                    <= 3.0
-                )
-            ]
-            if not current.empty:
-                figure.add_trace(
-                    go.Scatter(
-                        x=current["X"],
-                        y=current["Y"],
-                        mode="markers+text",
-                        text=current["Driver"],
-                        textposition="top center",
-                        name="Versenyzők",
-                        marker={
-                            "size": 12,
-                            # Team colours with a dark outline so light colours stay visible.
-                            "color": [
-                                (driver_colors or {}).get(name, DEFAULT_DRIVER_COLOR)
-                                for name in current["Driver"]
-                            ],
-                            "line": {"width": 1.5, "color": "#1F1F1F"},
-                        },
-                        customdata=current[
-                            ["LapNumber", "Speed"]
-                        ].to_numpy(),
-                        hovertemplate=(
-                            "%{text}<br>"
-                            "Kör: %{customdata[0]}<br>"
-                            "Sebesség: %{customdata[1]:.0f} km/h"
-                            "<extra></extra>"
-                        ),
-                    )
-                )
+    )
     figure.update_layout(
         title="Pálya és versenyzőpozíciók",
-        xaxis={"visible": False, "scaleanchor": "y"},
-        yaxis={"visible": False},
+        xaxis={"visible": False, "scaleanchor": "y", "range": x_range, "autorange": x_range is None},
+        yaxis={"visible": False, "range": y_range, "autorange": y_range is None},
         showlegend=False,
         margin={"l": 10, "r": 10, "t": 40, "b": 10},
+        uirevision="track",
     )
     return figure
+
+
+def build_position_window(frames_by_driver, driver_colors, start_seconds, end_seconds):
+    """Car positions on the common timeline between two replay times, for the browser.
+
+    Values are on the SAMPLE_INTERVAL_SECONDS grid starting at t0; missing
+    samples are None so the browser hides the car instead of guessing.
+    """
+    t0 = max(0.0, round(start_seconds / SAMPLE_INTERVAL_SECONDS) * SAMPLE_INTERVAL_SECONDS)
+    count = int(round((end_seconds - t0) / SAMPLE_INTERVAL_SECONDS)) + 1
+    drivers, colors, xs, ys = [], [], [], []
+    for driver, frames in frames_by_driver.items():
+        times = frames["TimeSeconds"].to_numpy(dtype=float)
+        inside = (times >= t0 - 1e-6) & (times <= end_seconds + 1e-6)
+        index = np.rint((times[inside] - t0) / SAMPLE_INTERVAL_SECONDS).astype(int)
+        valid = (index >= 0) & (index < count)
+        x = np.full(count, np.nan)
+        y = np.full(count, np.nan)
+        x[index[valid]] = frames["X"].to_numpy(dtype=float)[inside][valid]
+        y[index[valid]] = frames["Y"].to_numpy(dtype=float)[inside][valid]
+        drivers.append(str(driver))
+        colors.append((driver_colors or {}).get(driver, DEFAULT_DRIVER_COLOR))
+        xs.append([None if np.isnan(v) else round(float(v), 1) for v in x])
+        ys.append([None if np.isnan(v) else round(float(v), 1) for v in y])
+    return {
+        "t0": t0,
+        "dt": SAMPLE_INTERVAL_SECONDS,
+        "start": t0,
+        "end": t0 + (count - 1) * SAMPLE_INTERVAL_SECONDS,
+        "drivers": drivers,
+        "colors": colors,
+        "x": xs,
+        "y": ys,
+    }
