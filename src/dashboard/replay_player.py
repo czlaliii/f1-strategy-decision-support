@@ -135,6 +135,64 @@ def _resample_driver(driver_data, timeline):
         .reset_index(drop=True)
     )
 
+DEFAULT_DRIVER_COLOR = "#808080"
+STINT_COLUMNS = ["Driver", "stint_number", "lap_start", "lap_end", "compound", "tyre_age_at_start"]
+
+
+def tyre_state(stints, current_laps):
+    """Compound, tyre age and stint number for each driver's lap in progress.
+
+    current_laps maps Driver -> lap number. The stint covering that lap is
+    used (the later one if two overlap); tyre age is tyre_age_at_start plus
+    the laps completed since the stint started. After the last recorded
+    stint the age keeps counting on the same set.
+    """
+    rows = []
+    if stints is None or stints.empty:
+        return pd.DataFrame(columns=["Driver", "Compound", "TyreLife", "Stint"])
+    for driver, lap in current_laps.items():
+        driver_stints = stints.loc[
+            (stints["Driver"] == driver) & (stints["lap_start"] <= lap)
+        ].sort_values("stint_number")
+        if pd.isna(lap) or driver_stints.empty:
+            continue
+        covering = driver_stints.loc[driver_stints["lap_end"].isna() | (driver_stints["lap_end"] >= lap)]
+        stint = (covering if not covering.empty else driver_stints).iloc[-1]
+        age = stint["tyre_age_at_start"] + (int(lap) - int(stint["lap_start"]))
+        rows.append({
+            "Driver": driver,
+            "Compound": stint["compound"],
+            "TyreLife": int(age) if pd.notna(age) else None,
+            "Stint": int(stint["stint_number"]),
+        })
+    return pd.DataFrame(rows, columns=["Driver", "Compound", "TyreLife", "Stint"])
+
+
+def _fastf1_stints(session_laps):
+    """Build an OpenF1-style stint table from FastF1 laps (TyreLife counts the lap itself)."""
+    laps = session_laps.dropna(subset=["Stint", "LapNumber"])
+    if laps.empty:
+        return pd.DataFrame(columns=STINT_COLUMNS)
+    grouped = laps.sort_values("LapNumber").groupby(["Driver", "Stint"], as_index=False)
+    stints = grouped.agg(
+        lap_start=("LapNumber", "min"),
+        lap_end=("LapNumber", "max"),
+        compound=("Compound", "first"),
+        tyre_life_first=("TyreLife", "first"),
+    )
+    stints["tyre_age_at_start"] = (stints["tyre_life_first"] - 1).clip(lower=0)
+    stints = stints.rename(columns={"Stint": "stint_number"})
+    return stints[STINT_COLUMNS]
+
+
+def _team_color(value):
+    """Return a '#RRGGBB' colour from an OpenF1/FastF1 hex value, else None."""
+    text = str(value or "").strip().lstrip("#")
+    if len(text) == 6 and all(c in "0123456789abcdefABCDEF" for c in text):
+        return f"#{text.upper()}"
+    return None
+
+
 def _prepare_track_coordinates(data, x_column="X", y_column="Y"):
     """Return clean X/Y coordinates for drawing the track."""
     if data is None or data.empty or not {x_column, y_column}.issubset(data.columns):
@@ -410,10 +468,24 @@ def load_session_data(year, event_name, session_name):
     )
     # Track building lives in its own function.
     track = _build_fastf1_track(session, raw_telemetry)
+    driver_colors = {}
+    try:
+        for _, result in session.results.iterrows():
+            color = _team_color(result.get("TeamColor"))
+            if color and result.get("Abbreviation"):
+                driver_colors[str(result["Abbreviation"])] = color
+    except (AttributeError, KeyError):
+        pass
+    try:
+        stints = _fastf1_stints(session.laps)
+    except (AttributeError, KeyError):
+        stints = pd.DataFrame(columns=STINT_COLUMNS)
     return {
         "laps": laps,
         "frames": frames,
         "track": track,
+        "driver_colors": driver_colors,
+        "stints": stints,
     }
 
 def load_local_session_data(
@@ -680,10 +752,27 @@ def load_local_session_data(
     )
     # Track line from the cleanest full lap (see _build_local_track).
     track = _build_local_track(replay)
+    driver_colors = {
+        str(driver.get("name_acronym", number)): color
+        for number, driver in replay.drivers.items()
+        if (color := _team_color(driver.get("team_colour")))
+    }
+    stints_path = replay.data_dir / "stints.json"
+    stints = pd.read_json(stints_path) if stints_path.exists() else pd.DataFrame()
+    if {"session_key", "driver_number", "stint_number", "lap_start"}.issubset(stints.columns):
+        stints = stints.loc[pd.to_numeric(stints["session_key"], errors="coerce") == replay.session_key].copy()
+        stints["Driver"] = stints["driver_number"].map(
+            lambda number: str(replay.drivers.get(int(number), {}).get("name_acronym", number))
+        )
+        stints = stints.reindex(columns=STINT_COLUMNS)
+    else:
+        stints = pd.DataFrame(columns=STINT_COLUMNS)
     return {
         "laps": laps,
         "frames": frames,
         "track": track,
+        "driver_colors": driver_colors,
+        "stints": stints,
     }
 
 def build_current_snapshot(frames_by_driver, current_time_seconds):
@@ -707,7 +796,7 @@ def build_current_snapshot(frames_by_driver, current_time_seconds):
         return pd.DataFrame()
     return pd.DataFrame(rows).reset_index(drop=True)
 
-def build_leaderboard(current_frames, laps, current_time_seconds):
+def build_leaderboard(current_frames, laps, current_time_seconds, stints=None):
     """Build the leaderboard from the current replay state.
 
     Order is estimated from lap number, then distance within the lap;
@@ -721,6 +810,7 @@ def build_leaderboard(current_frames, laps, current_time_seconds):
         "Interval",
         "Compound",
         "TyreLife",
+        "Stint",
     ]
     if (
         current_frames is None
@@ -799,10 +889,17 @@ def build_leaderboard(current_frames, laps, current_time_seconds):
         "Interval": latest["Interval"],
         "Compound": latest["Compound"],
         "TyreLife": latest["TyreLife"],
+        "Stint": latest["Stint"] if "Stint" in latest.columns else np.nan,
     })
+    # Tyre data from the stint table, counted per lap from tyre_age_at_start.
+    if stints is not None and not stints.empty:
+        tyres = tyre_state(stints, dict(zip(result["Driver"], result["Lap"])))
+        result = result.drop(columns=["Compound", "TyreLife", "Stint"]).merge(
+            tyres, on="Driver", how="left"
+        )
     return result[columns].reset_index(drop=True)
 
-def build_track_figure(current_frames, track, current_time_seconds):
+def build_track_figure(current_frames, track, current_time_seconds, driver_colors=None):
     """Plotly figure of the track line and current car positions."""
     figure = go.Figure()
     if track is not None and not track.empty:
@@ -850,7 +947,15 @@ def build_track_figure(current_frames, track, current_time_seconds):
                         text=current["Driver"],
                         textposition="top center",
                         name="Versenyzők",
-                        marker={"size": 10},
+                        marker={
+                            "size": 12,
+                            # Team colours with a dark outline so light colours stay visible.
+                            "color": [
+                                (driver_colors or {}).get(name, DEFAULT_DRIVER_COLOR)
+                                for name in current["Driver"]
+                            ],
+                            "line": {"width": 1.5, "color": "#1F1F1F"},
+                        },
                         customdata=current[
                             ["LapNumber", "Speed"]
                         ].to_numpy(),

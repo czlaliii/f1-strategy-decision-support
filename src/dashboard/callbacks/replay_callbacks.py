@@ -166,6 +166,8 @@ def register_replay_callbacks(app):
                 "year": int(year),
                 "event_name": str(event_name),
                 "session_name": str(session_name),
+                "driver_colors": replay.get("driver_colors", {}),
+                "stints": replay.get("stints"),
                 # Set only for locally stored races; used by the strategy advisor.
                 "race_folder": race_folder,
                 "session_key": local_session_key,
@@ -321,11 +323,13 @@ def register_replay_callbacks(app):
             current_frames,
             laps,
             current_time,
+            replay.get("stints"),
         )
         track_figure = build_track_figure(
             current_frames,
             track,
             current_time,
+            replay.get("driver_colors"),
         )
         current_time_text = format_elapsed_time(current_time)
         total_time_text = format_elapsed_time(total_time)
@@ -348,11 +352,18 @@ def register_replay_callbacks(app):
             info = f"{driver}: még nincs befejezett köradat."
         else:
             row = driver_laps.sort_values("TimeSeconds").iloc[-1]
+            tyres = leaderboard.loc[leaderboard["Driver"] == driver]
+            tyre = tyres.iloc[0] if not tyres.empty else row
+
+            def shown(value):
+                return "–" if pd.isna(value) else value
+
             info = (
                 f"{driver} | {int(row['LapNumber'])}. kör | "
                 f"Utolsó köridő: {format_lap_time(row['LapTime'])} | "
-                f"Gumi: {row.get('Compound', '–')} | "
-                f"Gumikkor: {row.get('TyreLife', '–')}"
+                f"Gumi: {shown(tyre.get('Compound'))} | "
+                f"Gumikor: {shown(tyre.get('TyreLife'))} kör | "
+                f"Stint: {shown(tyre.get('Stint'))}"
             )
         preferred_columns = [
             "LapNumber",
