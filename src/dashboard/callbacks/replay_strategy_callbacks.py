@@ -11,7 +11,7 @@ from src.models.expanding_window_model import (
     fill_with_training_medians,
     load_or_train_model,
 )
-from src.simulator.race_simulator import MODEL_FEATURES, Strategy
+from src.simulator.race_simulator import Strategy
 from src.simulator.strategy_comparator import StrategyComparator
 
 SUPPORTED_COMPOUNDS = ("SOFT", "MEDIUM", "HARD")
@@ -120,7 +120,15 @@ def register_replay_strategy_callbacks(app):
                 f"A {replay_driver} versenyzőhöz nincs modellállapot a {current_lap}. körre. Az ajánlás ezért nem számítható ki biztonságosan.",
                 cache_key,
             )
-        initial_state = fill_with_training_medians(predictor, state_rows.iloc[0][MODEL_FEATURES])
+        state_row = state_rows.iloc[0]
+        # The pace reference and tyre age cannot be imputed meaningfully.
+        if pd.isna(state_row.get("field_pace_ref")) or pd.isna(state_row.get("tyre_age")):
+            return _empty_outputs(
+                f"A {current_lap}. körre még nincs elég tiszta köridő a tempó becsléséhez.",
+                cache_key,
+            )
+        model_features = list(dict.fromkeys(list(predictor.feature_names_in_) + ["lap_number", "tyre_age", "compound"]))
+        initial_state = fill_with_training_medians(predictor, state_row[model_features])
         current_compound = str(initial_state.get("compound", "UNKNOWN")).upper()
         if current_compound not in SUPPORTED_COMPOUNDS:
             return _empty_outputs(

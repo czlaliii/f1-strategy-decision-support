@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src.features.race_dataset import RAW_ROOT, build_race_dataset, list_local_races
-from src.models.expanding_window_model import races_before
+from src.models.expanding_window_model import STRATEGY_FEATURES, races_before
 from src.preprocessing.build_lap_data import build_stint_mapping
 from src.simulator.race_simulator import MODEL_FEATURES
 
@@ -47,7 +47,7 @@ def test_features_do_not_use_later_laps(monkeypatch):
     partial = build_race_dataset(REAL_RACE, session_key)
 
     keys = ["driver_number", "lap_number"]
-    features = [f for f in MODEL_FEATURES if f not in keys]
+    features = [f for f in dict.fromkeys(MODEL_FEATURES + STRATEGY_FEATURES) if f not in keys]
     before = full[full.lap_number <= cutoff].set_index(keys).sort_index()[features]
     after = partial.set_index(keys).sort_index()[features]
     pd.testing.assert_frame_equal(before, after.loc[before.index], check_dtype=False)

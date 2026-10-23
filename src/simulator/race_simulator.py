@@ -56,6 +56,10 @@ class RaceSimulator:
         starting_cumulative_time: float = 0.0,
     ):
         self.predictor = predictor
+        # Fitted sklearn models expose their input columns; older ones use MODEL_FEATURES.
+        self.features = list(getattr(predictor, "feature_names_in_", MODEL_FEATURES))
+        # Models with a field pace reference expose the field's per-lap gain from fuel burn.
+        self.fuel_effect_per_lap = float(getattr(predictor, "fuel_effect_per_lap", 0.0))
         self.current_state = dict(current_state)
         self.race_last_lap = int(race_last_lap)
         self.pit_loss_seconds = float(pit_loss_seconds)
@@ -63,7 +67,8 @@ class RaceSimulator:
         self._validate_state()
 
     def _validate_state(self):
-        missing = [feature for feature in MODEL_FEATURES if feature not in self.current_state]
+        required = set(self.features) | {"lap_number", "compound", "tyre_age"}
+        missing = [feature for feature in sorted(required) if feature not in self.current_state]
         if missing:
             raise ValueError(f"Current race state is missing model features: {missing}")
         if int(self.current_state["lap_number"]) >= self.race_last_lap:
@@ -111,7 +116,7 @@ class RaceSimulator:
         while states and int(states[0]["lap_number"]) < self.race_last_lap:
             simulated_lap = int(states[0]["lap_number"]) + 1
             features = pd.DataFrame(
-                [{feature: state[feature] for feature in MODEL_FEATURES} for state in states]
+                [{feature: state[feature] for feature in self.features} for state in states]
             )
             predictions = np.asarray(self.predictor.predict(features), dtype=float)
             if len(predictions) != len(states):
@@ -132,8 +137,8 @@ class RaceSimulator:
                 records[index].append(
                     {
                         "lap_number": simulated_lap,
-                        "driver_number": state["driver_number"],
-                        "position": state["position"],
+                        "driver_number": state.get("driver_number"),
+                        "position": state.get("position"),
                         "compound": state["compound"],
                         "tyre_age": state["tyre_age"],
                         "predicted_lap_time": predicted_lap_time,
@@ -145,18 +150,35 @@ class RaceSimulator:
                     }
                 )
 
-                previous_lap_time = state["previous_lap_time"]
-                state["lap_number"] = simulated_lap
-                state["compound"] = compound_after_lap
-                state["tyre_age"] = tyre_age_after_lap
-                state["previous_lap_time"] = predicted_lap_time
-                state["lap_time_delta"] = predicted_lap_time - previous_lap_time
-                state["rolling_3_lap_avg"] = (2 * state["rolling_3_lap_avg"] + predicted_lap_time) / 3
-                state["rolling_5_lap_avg"] = (4 * state["rolling_5_lap_avg"] + predicted_lap_time) / 5
-                state["position_change"] = 0.0
-                state["gap_change"] = 0.0
-                state["interval_change"] = 0.0
-                state["laps_since_pit"] = 0.0 if pit_stop else state["laps_since_pit"] + 1
-                state["has_previous_pit"] = 1 if pit_stop else state["has_previous_pit"]
+                self._advance_state(
+                    state, simulated_lap, predicted_lap_time, pit_stop,
+                    compound_after_lap, tyre_age_after_lap,
+                )
 
         return [pd.DataFrame(strategy_records) for strategy_records in records]
+
+    def _advance_state(self, state, lap, lap_time, pit_stop, compound, tyre_age):
+        """Move a state to the end of `lap`; history features are updated only if present."""
+        state["lap_number"] = lap
+        state["compound"] = compound
+        state["tyre_age"] = tyre_age
+        if "field_pace_ref" in state:
+            state["field_pace_ref"] = state["field_pace_ref"] - self.fuel_effect_per_lap
+        if "laps_remaining" in state:
+            state["laps_remaining"] = state["laps_remaining"] - 1
+        if "previous_lap_time" in state:
+            previous_lap_time = state["previous_lap_time"]
+            state["previous_lap_time"] = lap_time
+            if "lap_time_delta" in state:
+                state["lap_time_delta"] = lap_time - previous_lap_time
+        if "rolling_3_lap_avg" in state:
+            state["rolling_3_lap_avg"] = (2 * state["rolling_3_lap_avg"] + lap_time) / 3
+        if "rolling_5_lap_avg" in state:
+            state["rolling_5_lap_avg"] = (4 * state["rolling_5_lap_avg"] + lap_time) / 5
+        for change in ("position_change", "gap_change", "interval_change"):
+            if change in state:
+                state[change] = 0.0
+        if "laps_since_pit" in state:
+            state["laps_since_pit"] = 0.0 if pit_stop else state["laps_since_pit"] + 1
+        if "has_previous_pit" in state:
+            state["has_previous_pit"] = 1 if pit_stop else state["has_previous_pit"]

@@ -24,7 +24,13 @@ RAW_ROOT = PROJECT_ROOT / "data" / "raw"
 PROCESSED_ROOT = PROJECT_ROOT / "data" / "processed"
 CATALOG_PATH = PROJECT_ROOT / "data" / "metadata" / "race_catalog.csv"
 # Bump when the dataset logic changes so stale caches are not reused.
-DATASET_VERSION = 1
+DATASET_VERSION = 3
+DRY_COMPOUNDS = ("SOFT", "MEDIUM", "HARD")
+# Number of recent laps in the field pace reference.
+PACE_WINDOW_LAPS = 5
+# A racing lap is green if it is at most this share of recent green laps.
+GREEN_LAP_LIMIT = 1.07
+GREEN_REFERENCE_LAPS = 40
 
 HISTORY_COLUMNS = [
     "previous_lap_time",
@@ -95,6 +101,84 @@ def add_missing_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _green_laps(df: pd.DataFrame, lap_time: pd.Series, racing: pd.Series) -> pd.Series:
+    """Flag racing laps not slower than GREEN_LAP_LIMIT x recent accepted green laps.
+
+    Laps are visited in finishing order and judged only against laps that
+    finished earlier, so SC/VSC laps are rejected without using later data.
+    """
+    green = pd.Series(False, index=df.index)
+    accepted = []
+    for index in df.sort_values("date_end").index:
+        if not racing[index]:
+            continue
+        time = lap_time[index]
+        recent = accepted[-GREEN_REFERENCE_LAPS:]
+        if not recent or time <= GREEN_LAP_LIMIT * float(pd.Series(recent).median()):
+            green[index] = True
+            accepted.append(time)
+    return green
+
+
+def add_pace_references(df: pd.DataFrame) -> pd.DataFrame:
+    """Add tyre-independent pace references known at the end of each lap.
+
+    field_pace_ref: median green lap time of the field over the last
+    PACE_WINDOW_LAPS laps, using only laps finished by this row's date_end;
+    held at the last green value under SC/VSC.
+    driver_pace_offset: expanding median of the driver's green laps
+    relative to field_pace_ref (driver/car strength), after 3 green laps.
+    Racing laps exclude lap 1, in-laps and out-laps; green laps are racing
+    laps not slowed by SC/VSC (see _green_laps).
+    """
+    df = df.sort_values(["driver_number", "lap_number"]).reset_index(drop=True)
+    lap_time = pd.to_numeric(df["lap_duration"], errors="coerce")
+    out_lap = (
+        df["is_pit_out_lap"].astype("boolean").fillna(False).astype(bool)
+        if "is_pit_out_lap" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    racing = (
+        (df["lap_number"] >= 2)
+        & ~out_lap
+        & ~df["pit_stop"].astype(bool)
+        & lap_time.gt(0)
+    )
+    df["is_racing_lap"] = racing
+    df["is_green_lap"] = _green_laps(df, lap_time, racing)
+
+    ends = df["date_end"].to_numpy()
+    laps = df["lap_number"].to_numpy()
+    green_times = lap_time.where(df["is_green_lap"]).to_numpy()
+    references = []
+    for end, lap in zip(ends, laps):
+        window = (ends <= end) & (laps > lap - PACE_WINDOW_LAPS) & (laps <= lap)
+        values = green_times[window]
+        values = values[~pd.isna(values)]
+        references.append(float(pd.Series(values).median()) if len(values) else float("nan"))
+    df["field_pace_ref"] = references
+    # Under SC/VSC no green laps finish; keep the last green reference in time order.
+    df["field_pace_ref"] = (
+        df.sort_values("date_end")["field_pace_ref"].ffill().reindex(df.index)
+    )
+
+    relative = (lap_time - df["field_pace_ref"]).where(df["is_green_lap"])
+    df["driver_pace_offset"] = (
+        relative.groupby(df["driver_number"])
+        .transform(lambda values: values.expanding(min_periods=3).median())
+    )
+    df["driver_pace_offset"] = df.groupby("driver_number")["driver_pace_offset"].ffill()
+
+    # Race distance is known before the start, so this is a valid fuel-load proxy.
+    df["laps_remaining"] = df["lap_number"].max() - df["lap_number"]
+
+    # Training-label flag only: whether the target (next) lap is a racing lap.
+    df["target_is_racing_lap"] = (
+        racing.groupby(df["driver_number"]).shift(-1).astype("boolean").fillna(False).astype(bool)
+    )
+    return df
+
+
 def build_race_dataset(race_folder: str, session_key: int) -> pd.DataFrame:
     """Run the pandas pipeline on one race and return every lap row.
 
@@ -131,7 +215,7 @@ def build_race_dataset(race_folder: str, session_key: int) -> pd.DataFrame:
         vsc_intervals = []
     race_state = add_conditions(race_state, vsc_intervals)
 
-    dataset = add_missing_indicators(add_lap_features(race_state))
+    dataset = add_pace_references(add_missing_indicators(add_lap_features(race_state)))
     dataset["race"] = race_folder
     dataset["session_key"] = session_key
     return dataset
