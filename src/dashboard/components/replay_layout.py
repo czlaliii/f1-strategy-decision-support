@@ -54,6 +54,9 @@ def replay_layout():
                     html.Div(id="replay-message", className="inline-status mb-3"),
                     dbc.Alert(id="replay-session-info", color="light", className="session-info-banner mb-3", children="Nincs betöltött session."),
                     dcc.Store(id="live-strategy-state", data={}),
+                    # Strategy job queued for the worker process, and a poll for its result.
+                    dcc.Store(id="strategy-request"),
+                    dcc.Interval(id="strategy-poll", interval=400, n_intervals=0),
                     dbc.Card(
                         className="replay-panel mb-3 live-strategy-panel",
                         children=[
