@@ -8,6 +8,7 @@ from dash import ClientsideFunction, State, ctx, no_update
 from dash.dependencies import Input, Output
 
 from src.dashboard.config import PROJECT_ROOT
+from src.dashboard.theme import GRID
 from src.dashboard.replay_player import (
     build_current_snapshot,
     build_leaderboard,
@@ -471,7 +472,6 @@ def register_replay_callbacks(app):
                     ),
                 )
                 chart.update_layout(
-                    template="plotly_white",
                     height=360,
                     margin={"l": 18, "r": 18, "t": 52, "b": 35},
                     hovermode="x unified",
@@ -486,7 +486,7 @@ def register_replay_callbacks(app):
                         "title": "Köridő (másodperc)",
                         "range": [y_min - padding, y_max + padding],
                         "tickformat": ".1f",
-                        "gridcolor": "#e7ebf0",
+                        "gridcolor": GRID,
                         "zeroline": False,
                     },
                 )
@@ -503,13 +503,11 @@ def register_replay_callbacks(app):
 
     @app.callback(
         Output("replay-view", "style"),
-        Output("grid-view", "style"),
         Input("replay-data-store", "data"),
     )
     def show_replay_view(data):
-        """The replay and grid sections appear once a session has been loaded."""
-        style = {"display": "block"} if (data or {}).get("replay_id") else {"display": "none"}
-        return style, style
+        """The replay workspace appears once a session has been loaded."""
+        return {"display": "block"} if (data or {}).get("replay_id") else {"display": "none"}
 
     @app.callback(
         Output("replay-track", "figure"),

@@ -6,6 +6,7 @@ from dash.dependencies import Input, Output
 
 from src.analysis.grid_finish import all_races_correlation, race_grid_and_result, rank_correlation
 from src.dashboard.replay_service import REPLAY_CACHE
+from src.dashboard.theme import ACCENT, GRID, TEXT, TEXT_MUTED
 
 # Interpretation bands for Spearman's rho (absolute value).
 RHO_BANDS = [(0.8, "erős"), (0.6, "közepesen erős"), (0.4, "mérsékelt"), (0.0, "gyenge")]
@@ -14,9 +15,9 @@ RHO_BANDS = [(0.8, "erős"), (0.6, "közepesen erős"), (0.4, "mérsékelt"), (0
 def _message_figure(text):
     figure = go.Figure()
     figure.update_layout(
-        height=420, plot_bgcolor="#ffffff", margin={"l": 10, "r": 10, "t": 10, "b": 10},
+        height=420, plot_bgcolor="rgba(0,0,0,0)", margin={"l": 10, "r": 10, "t": 10, "b": 10},
         xaxis={"visible": False}, yaxis={"visible": False},
-        annotations=[{"text": text, "showarrow": False, "font": {"color": "#697586"}}],
+        annotations=[{"text": text, "showarrow": False, "font": {"color": TEXT_MUTED}}],
     )
     return figure
 
@@ -30,12 +31,12 @@ def _scatter(table):
     # Diagonal: finished where they started. Above it = places gained.
     figure.add_trace(go.Scatter(
         x=[0.5, size + 0.5], y=[0.5, size + 0.5], mode="lines", hoverinfo="skip",
-        line={"color": "#c3c9d3", "dash": "dash", "width": 1.5}, name="nem változott",
+        line={"color": "#4b4f5c", "dash": "dash", "width": 1.5}, name="nem változott",
     ))
     change = finishers["grid"] - finishers["finish"]
     figure.add_trace(go.Scatter(
         x=finishers["grid"], y=finishers["finish"], mode="markers+text",
-        text=finishers["Driver"], textposition="middle right", textfont={"size": 10, "color": "#354052"},
+        text=finishers["Driver"], textposition="middle right", textfont={"size": 10, "color": TEXT},
         marker={"size": 13, "color": finishers["team_colour"], "line": {"width": 1.5, "color": "#ffffff"}},
         customdata=np.column_stack([change]),
         hovertemplate="%{text}<br>Rajt: %{x} → Cél: %{y}<br>Változás: %{customdata[0]:+d} hely<extra></extra>",
@@ -44,7 +45,7 @@ def _scatter(table):
     if len(out):
         figure.add_trace(go.Scatter(
             x=out["grid"], y=[out_row] * len(out), mode="markers+text",
-            text=out["Driver"], textposition="top center", textfont={"size": 9, "color": "#9aa3af"},
+            text=out["Driver"], textposition="top center", textfont={"size": 9, "color": TEXT_MUTED},
             marker={"symbol": "x", "size": 10, "color": out["team_colour"]},
             customdata=out["status"],
             hovertemplate="%{text}<br>Rajt: %{x} · %{customdata}<extra></extra>",
@@ -55,12 +56,12 @@ def _scatter(table):
     figure.update_layout(
         height=420,
         margin={"l": 10, "r": 10, "t": 10, "b": 10},
-        plot_bgcolor="#ffffff",
+        plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
-        xaxis={"title": "Rajtpozíció", "range": [0.4, size + 0.9], "dtick": 1, "gridcolor": "#eef1f5", "zeroline": False},
+        xaxis={"title": "Rajtpozíció", "range": [0.4, size + 0.9], "dtick": 1, "gridcolor": GRID, "zeroline": False},
         # P1 at the top, so points above the diagonal gained places.
         yaxis={"title": "Végeredmény", "range": [out_row + 0.8, 0.4], "tickvals": tick_values,
-               "ticktext": tick_text, "gridcolor": "#eef1f5", "zeroline": False},
+               "ticktext": tick_text, "gridcolor": GRID, "zeroline": False},
     )
     return figure
 
@@ -107,23 +108,23 @@ def _trend(history, race_folder, pooled_rho):
     current = history["race"] == race_folder
     figure.add_trace(go.Scatter(
         x=history["race_date"], y=history["spearman"], mode="markers",
-        marker={"size": 7, "color": "#b8c0cc"}, text=history["race"],
+        marker={"size": 7, "color": "#5c6170"}, text=history["race"],
         hovertemplate="%{text}<br>ρ = %{y:.2f}<extra></extra>",
     ))
     figure.add_trace(go.Scatter(
         x=history.loc[current, "race_date"], y=history.loc[current, "spearman"], mode="markers",
-        marker={"size": 13, "color": "#d62839", "line": {"width": 2, "color": "#ffffff"}},
+        marker={"size": 13, "color": ACCENT, "line": {"width": 2, "color": "#ffffff"}},
         text=history.loc[current, "race"], hovertemplate="%{text} (kiválasztott)<br>ρ = %{y:.2f}<extra></extra>",
     ))
     median = history["spearman"].median()
-    figure.add_hline(y=median, line={"color": "#697586", "dash": "dot", "width": 1},
+    figure.add_hline(y=median, line={"color": TEXT_MUTED, "dash": "dot", "width": 1},
                      annotation_text=f"medián {median:.2f} · összesített ρ {pooled_rho:.2f}",
-                     annotation_position="bottom right", annotation_font={"size": 10, "color": "#697586"})
+                     annotation_position="bottom right", annotation_font={"size": 10, "color": TEXT_MUTED})
     figure.update_layout(
-        height=230, margin={"l": 10, "r": 10, "t": 30, "b": 10}, plot_bgcolor="#ffffff", showlegend=False,
+        height=230, margin={"l": 10, "r": 10, "t": 30, "b": 10}, plot_bgcolor="rgba(0,0,0,0)", showlegend=False,
         title={"text": "Spearman ρ versenyenként (helyi versenyek)", "font": {"size": 12}},
-        yaxis={"range": [min(0, history["spearman"].min() - 0.05), 1.02], "gridcolor": "#eef1f5", "zeroline": False},
-        xaxis={"gridcolor": "#eef1f5"},
+        yaxis={"range": [min(0, history["spearman"].min() - 0.05), 1.02], "gridcolor": GRID, "zeroline": False},
+        xaxis={"gridcolor": GRID},
     )
     return figure
 

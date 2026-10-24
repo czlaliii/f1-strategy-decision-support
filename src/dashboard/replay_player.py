@@ -138,7 +138,7 @@ def _resample_driver(driver_data, timeline):
 
 DEFAULT_DRIVER_COLOR = "#808080"
 # Track map styling (dark, broadcast-like).
-TRACK_MAP_BACKGROUND = "#15151e"
+TRACK_MAP_BACKGROUND = "#111218"
 TRACK_MAP_HEIGHT = 560
 # Gaussian time smoothing of displayed car positions; OpenF1 location samples
 # arrive every 0.16-0.38 s, which makes linearly interpolated motion surge.

@@ -14,10 +14,13 @@ from dash.dependencies import Input, Output, State
 from src.dashboard import strategy_service, strategy_worker
 from src.dashboard.replay_player import format_lap_time
 from src.dashboard.replay_service import REPLAY_CACHE, time_to_lap
+from src.dashboard.theme import GRID, TEXT_MUTED
 from src.simulator import strategy_advisor as advisor
 
 SUPPORTED_COMPOUNDS = advisor.DRY_COMPOUNDS
-COMPOUND_COLORS = {"SOFT": "#d62839", "MEDIUM": "#e0b100", "HARD": "#8a94a6"}
+# Official tyre colours; light compounds need dark text on top of them.
+COMPOUND_COLORS = {"SOFT": "#e10600", "MEDIUM": "#ffd12e", "HARD": "#f2f2f2"}
+COMPOUND_TEXT = {"SOFT": "#ffffff", "MEDIUM": "#111111", "HARD": "#111111"}
 COMPOUND_NAMES = {"SOFT": "Soft", "MEDIUM": "Medium", "HARD": "Hard"}
 
 
@@ -28,8 +31,8 @@ def _empty_figure(message=""):
         margin={"l": 10, "r": 10, "t": 30, "b": 10},
         xaxis={"visible": False},
         yaxis={"visible": False},
-        annotations=[{"text": message, "showarrow": False, "font": {"color": "#697586"}}] if message else [],
-        plot_bgcolor="#ffffff",
+        annotations=[{"text": message, "showarrow": False, "font": {"color": TEXT_MUTED}}] if message else [],
+        plot_bgcolor="rgba(0,0,0,0)",
     )
     return figure
 
@@ -50,7 +53,7 @@ def _compound_pill(compound):
     return html.Span(
         COMPOUND_NAMES.get(compound, compound),
         className="compound-pill",
-        style={"backgroundColor": COMPOUND_COLORS.get(compound, "#697586")},
+        style={"backgroundColor": COMPOUND_COLORS.get(compound, "#697586"), "color": COMPOUND_TEXT.get(compound, "#ffffff")},
     )
 
 
@@ -164,18 +167,18 @@ def _dropoff_figure(result):
             y=observed["dropoff"],
             mode="markers",
             name="Megfigyelt körök (igazítva)",
-            marker={"color": COMPOUND_COLORS.get(tyre["compound"], "#17212f"), "size": 7, "line": {"width": 1, "color": "#17212f"}},
+            marker={"color": COMPOUND_COLORS.get(tyre["compound"], "#ffffff"), "size": 7, "line": {"width": 1, "color": "#0b0c10"}},
             hovertemplate="%{x}. kör a szetten: %{y:+.2f} s<extra></extra>",
         ))
-    figure.add_vline(x=tyre["age"], line={"color": "#17212f", "dash": "dash", "width": 1})
+    figure.add_vline(x=tyre["age"], line={"color": TEXT_MUTED, "dash": "dash", "width": 1})
     figure.update_layout(
         height=300,
         margin={"l": 10, "r": 10, "t": 30, "b": 10},
         title={"text": "Köridő-visszaesés a friss szetthez képest", "font": {"size": 13}},
-        xaxis={"title": "Gumikor (kör)", "gridcolor": "#eef1f5"},
-        yaxis={"title": "Lassulás (s)", "gridcolor": "#eef1f5", "zeroline": True},
+        xaxis={"title": "Gumikor (kör)", "gridcolor": GRID},
+        yaxis={"title": "Lassulás (s)", "gridcolor": GRID, "zeroline": True},
         legend={"orientation": "h", "y": -0.25, "font": {"size": 11}},
-        plot_bgcolor="#ffffff",
+        plot_bgcolor="rgba(0,0,0,0)",
     )
     return figure
 
@@ -209,7 +212,8 @@ def _stint_bar(segments, race_last_lap, decision_lap=None, until_lap=None):
             COMPOUND_NAMES.get(compound, compound)[:1] if width >= 4 else "",
             className="stint-seg",
             title=f"{COMPOUND_NAMES.get(compound, compound)} · {segment['start']}–{segment['end']}. kör",
-            style={"width": f"{width}%", "backgroundColor": COMPOUND_COLORS.get(compound, "#697586")},
+            style={"width": f"{width}%", "backgroundColor": COMPOUND_COLORS.get(compound, "#697586"),
+                   "color": COMPOUND_TEXT.get(compound, "#ffffff")},
         ))
     if until_lap is not None and until_lap < race_last_lap:
         # Laps not yet driven in the replay.
