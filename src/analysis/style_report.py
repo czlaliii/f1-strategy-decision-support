@@ -22,6 +22,7 @@ Run from the project root:
     python -m src.analysis.style_report
 """
 import argparse
+import json
 import os
 
 import numpy as np
@@ -316,6 +317,16 @@ def main():
     clusters.to_csv(REPORT_DIR / "driver_clusters.csv", index=False)
 
     reliability = split_half_reliability(tables)
+    centres.to_csv(REPORT_DIR / "cluster_centres.csv", index_label="cluster")
+    (REPORT_DIR / "report_meta.json").write_text(json.dumps({
+        "races": used,
+        "reliability": {m: float(r) for m, r in reliability.items()},
+        "silhouette": {str(k): float(v) for k, v in scores.items()},
+        "k": int(model.n_clusters),
+        "stability_ari": stability,
+        "cluster_names": {str(c): n for c, n in names.items()},
+        "clip_z": CLIP_Z,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     write_figures(team_season, driver_season, clusters, x)
     print(write_summary(used, reliability, team_season, scores, model.n_clusters, stability, centres, clusters))
     print(f"\nSaved to: {REPORT_DIR}")

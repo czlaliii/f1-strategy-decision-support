@@ -245,3 +245,18 @@ body {
 .dash-tooltip[data-attr-anchor='top']:before { border-bottom-color: var(--fastest-lap) !important; }
 .dash-tooltip[data-attr-anchor='bottom']:after { border-top-color: var(--surface-raised) !important; }
 .dash-tooltip[data-attr-anchor='bottom']:before { border-top-color: var(--fastest-lap) !important; }
+
+/* --- Models tab --- */
+.kpi-tile-best { border-left-color: #4ee08a; box-shadow: inset 0 0 0 1px rgba(78, 224, 138, .25); }
+.models-test { padding: .75rem .9rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--surface-raised); }
+.models-test-text { color: var(--ink); font-size: .88rem; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.models-table { width: 100%; border-collapse: collapse; font-size: .86rem; font-variant-numeric: tabular-nums; }
+.models-table th { padding: .45rem .6rem; border-bottom: 1px solid var(--line); background: var(--surface-raised); color: var(--muted); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; }
+.models-table td { padding: .45rem .6rem; border-bottom: 1px solid var(--line); }
+.models-table tr.is-used td { background: rgba(225, 6, 0, .14); color: #fff; font-weight: 800; }
+.models-table tr.is-used td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.models-season { min-width: 190px; }
+.planned-model { opacity: .85; border-style: dashed; }
+.planned-badge { float: right; padding: .05rem .45rem; border: 1px solid var(--muted); border-radius: 999px; color: var(--muted); font-size: .6rem; letter-spacing: .08em; }
+.planned-method { margin-bottom: .4rem; color: #fff; font-weight: 800; }
+.planned-text { margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.55; }

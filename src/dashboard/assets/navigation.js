@@ -1,7 +1,7 @@
 // Tab navigation of the replay workspace, handled in the browser.
 // Returns the panel styles followed by the tab button classes.
 (function () {
-    var TABS = ["track", "strategy", "laps", "progress"];
+    var TABS = ["track", "strategy", "laps", "progress", "models"];
 
     function switchTab() {
         var context = window.dash_clientside.callback_context;

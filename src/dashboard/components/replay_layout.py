@@ -1,11 +1,12 @@
 """Replay workspace: tab navigation, playback bar and the tab panels.
 
-Panels: track map + leaderboard (default), strategy, lap times, race progression.
+Panels: track map + leaderboard (default), strategy, lap times, race progression, models.
 Switching tabs is handled in the browser (assets/navigation.js).
 """
 import dash_bootstrap_components as dbc
 from dash import dash_table, dcc, html
 
+from src.dashboard.components.models_layout import models_layout
 from src.dashboard.components.progression_layout import progression_layout
 from src.dashboard.theme import (
     ACCENT,
@@ -23,6 +24,7 @@ TABS = [
     ("strategy", "Stratégia"),
     ("laps", "Köridők"),
     ("progress", "Versenyfolyamat"),
+    ("models", "Modellek"),
 ]
 
 
@@ -316,6 +318,7 @@ def replay_layout():
         "strategy": _strategy_panel(),
         "laps": _laps_panel(),
         "progress": progression_layout(),
+        "models": models_layout(),
     }
     return html.Div(
         id="replay-view",
