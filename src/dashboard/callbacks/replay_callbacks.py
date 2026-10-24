@@ -2,16 +2,19 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 from dash import ClientsideFunction, State, ctx, no_update
 from dash.dependencies import Input, Output
 
 from src.dashboard.config import PROJECT_ROOT
-from src.dashboard.theme import GRID
+from src.dashboard.theme import FASTEST_LAP, GRID, PERSONAL_BEST
 from src.dashboard.replay_player import (
+    FASTEST_LAP_MARK,
     build_current_snapshot,
     build_leaderboard,
+    fastest_laps,
     build_position_window,
     build_track_figure,
     format_elapsed_time,
@@ -26,6 +29,34 @@ from src.dashboard.replay_service import (
     lap_to_time,
     time_to_lap,
 )
+
+
+# Lap table headers.
+LAP_COLUMN_NAMES = {
+    "LapNumber": "Kör",
+    "LapTime": "Köridő",
+    "Sector1Time": "S1",
+    "Sector2Time": "S2",
+    "Sector3Time": "S3",
+    "Compound": "Gumi",
+    "TyreLife": "Gumikor",
+    "Stint": "Stint",
+    "Position": "Pozíció",
+    "IsPersonalBest": "Egyéni legjobb",
+}
+# Candidate spacings (s) for lap-time axis ticks; the smallest giving <= 7 ticks is used.
+LAP_TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 30, 60]
+
+
+def lap_time_ticks(low, high):
+    """Tick values and m:ss.mmm labels for a lap-time axis between low and high seconds."""
+    step = next((s for s in LAP_TICK_STEPS if (high - low) / s <= 7), LAP_TICK_STEPS[-1])
+    values = np.round(np.arange(np.ceil(low / step) * step, high + 1e-9, step), 3)
+    labels = []
+    for value in values:
+        minutes, seconds = divmod(value, 60)
+        labels.append(f"{int(minutes)}:{seconds:06.3f}")
+    return values.tolist(), labels
 
 
 # Track status banner: label and CSS modifier per race-control state.
@@ -344,6 +375,12 @@ def register_replay_callbacks(app):
             replay.get("stints"),
             replay.get("retirements"),
         )
+        # Fastest lap of the race so far: purple stopwatch next to the driver.
+        overall, personal = fastest_laps(laps, current_time)
+        if overall is not None and not leaderboard.empty:
+            holder = leaderboard["Driver"] == overall["Driver"]
+            if holder.any():
+                leaderboard.loc[holder, "Driver"] = leaderboard.loc[holder, "Driver"] + f" {FASTEST_LAP_MARK}"
         current_time_text = format_elapsed_time(current_time)
         total_time_text = format_elapsed_time(total_time)
         if driver is None:
@@ -361,22 +398,28 @@ def register_replay_callbacks(app):
             (laps["Driver"] == driver)
             & (laps["TimeSeconds"] <= current_time)
         ].copy()
+        # One personal best per driver: their fastest lap so far.
+        driver_laps["IsPersonalBest"] = driver_laps["LapNumber"] == personal.get(driver)
+        is_overall = (
+            (driver == overall["Driver"]) & (driver_laps["LapNumber"] == overall["LapNumber"])
+            if overall is not None else pd.Series(False, index=driver_laps.index)
+        )
         if driver_laps.empty:
             info = f"{driver}: még nincs befejezett köradat."
         else:
+            # Everything from the last completed lap, so it matches the lap table.
             row = driver_laps.sort_values("TimeSeconds").iloc[-1]
-            tyres = leaderboard.loc[leaderboard["Driver"] == driver]
-            tyre = tyres.iloc[0] if not tyres.empty else row
 
             def shown(value):
-                return "–" if pd.isna(value) else value
+                return "–" if pd.isna(value) else int(value) if isinstance(value, float) else value
 
             info = (
                 f"{driver} | {int(row['LapNumber'])}. kör | "
                 f"Utolsó köridő: {format_lap_time(row['LapTime'])} | "
-                f"Gumi: {shown(tyre.get('Compound'))} | "
-                f"Gumikor: {shown(tyre.get('TyreLife'))} kör | "
-                f"Stint: {shown(tyre.get('Stint'))}"
+                f"Gumi: {shown(row.get('Compound'))} | "
+                f"Gumikor: {shown(row.get('TyreLife'))} kör | "
+                f"Stint: {shown(row.get('Stint'))} | "
+                f"Pozíció: {shown(row.get('Position'))}"
             )
         preferred_columns = [
             "LapNumber",
@@ -394,8 +437,10 @@ def register_replay_callbacks(app):
             column for column in preferred_columns
             if column in driver_laps.columns
         ]
-        # The lap table and chart change only when a lap is completed.
-        view_key = f"{replay_id}|{driver}|{len(driver_laps)}"
+        # The lap table and chart change only when a lap is completed or the
+        # race's fastest lap moves to another lap.
+        fastest_key = f"{overall['Driver']}-{overall['LapNumber']}" if overall else "-"
+        view_key = f"{replay_id}|{driver}|{len(driver_laps)}|{fastest_key}"
         if view_key == view_state:
             return (
                 current_time_text,
@@ -423,8 +468,19 @@ def register_replay_callbacks(app):
                 lap_table[column] = lap_table[column].map(
                     format_lap_time
                 )
+        overall_rows = is_overall.reindex(lap_table.index, fill_value=False)
+        # Guard: an empty table has a numeric LapTime column.
+        if overall_rows.any():
+            lap_table.loc[overall_rows, "LapTime"] = lap_table.loc[overall_rows, "LapTime"] + f" {FASTEST_LAP_MARK}"
+        for column in ["TyreLife", "Stint", "Position"]:
+            if column in lap_table.columns:
+                lap_table[column] = pd.to_numeric(lap_table[column], errors="coerce").astype("Int64")
+        if "IsPersonalBest" in lap_table.columns:
+            lap_table["IsPersonalBest"] = lap_table["IsPersonalBest"].map(
+                lambda value: "✓" if value is True or value == 1 else ""
+            )
         table_columns = [
-            {"name": column, "id": column}
+            {"name": LAP_COLUMN_NAMES.get(column, column), "id": column}
             for column in available_columns
         ]
         # Chart runs chronologically; the table is sorted by descending lap.
@@ -451,26 +507,38 @@ def register_replay_callbacks(app):
                     y="LapTime",
                     markers=True,
                     title=f"{driver} köridői",
-                    labels={
-                        "LapNumber": "Befejezett kör",
-                        "LapTime": "Köridő (másodperc)",
-                    },
-                    hover_data={
-                        "LapNumber": True,
-                        "LapTime": ":.3f",
-                        "Compound": True if "Compound" in chart_data.columns else False,
-                        "TyreLife": True if "TyreLife" in chart_data.columns else False,
-                    },
+                )
+                lap_texts = chart_data["LapTime"].map(format_lap_time)
+                tyres = (
+                    chart_data["Compound"].fillna("–").astype(str)
+                    if "Compound" in chart_data.columns
+                    else pd.Series("–", index=chart_data.index)
                 )
                 chart.update_traces(
                     line={"width": 3},
                     marker={"size": 7},
+                    customdata=np.column_stack([lap_texts, tyres]),
                     hovertemplate=(
                         "Kör: %{x}<br>"
-                        "Köridő: %{y:.3f} s"
+                        "Köridő: %{customdata[0]}<br>"
+                        "Gumi: %{customdata[1]}"
                         "<extra></extra>"
                     ),
                 )
+                # Highlight the personal best (green) and the race's fastest lap (purple).
+                for mask, color, label in [
+                    (chart_data["IsPersonalBest"].astype(bool) & ~is_overall.reindex(chart_data.index, fill_value=False),
+                     PERSONAL_BEST, "Egyéni legjobb"),
+                    (is_overall.reindex(chart_data.index, fill_value=False), FASTEST_LAP, "A verseny leggyorsabb köre"),
+                ]:
+                    if mask.any():
+                        chart.add_scatter(
+                            x=chart_data.loc[mask, "LapNumber"], y=chart_data.loc[mask, "LapTime"],
+                            mode="markers", marker={"size": 13, "color": color, "line": {"width": 2, "color": "#ffffff"}},
+                            customdata=lap_texts[mask], name=label,
+                            hovertemplate=f"{label}: %{{customdata}}<extra></extra>",
+                        )
+                tick_values, tick_labels = lap_time_ticks(y_min - padding, y_max + padding)
                 chart.update_layout(
                     height=360,
                     margin={"l": 18, "r": 18, "t": 52, "b": 35},
@@ -483,9 +551,10 @@ def register_replay_callbacks(app):
                         "zeroline": False,
                     },
                     yaxis={
-                        "title": "Köridő (másodperc)",
+                        "title": "Köridő (perc:mp)",
                         "range": [y_min - padding, y_max + padding],
-                        "tickformat": ".1f",
+                        "tickvals": tick_values,
+                        "ticktext": tick_labels,
                         "gridcolor": GRID,
                         "zeroline": False,
                     },

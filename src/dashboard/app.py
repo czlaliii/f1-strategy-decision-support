@@ -2,8 +2,8 @@
 import dash_bootstrap_components as dbc
 from dash import Dash
 
-from src.dashboard.callbacks.grid_callbacks import register_grid_callbacks
 from src.dashboard.callbacks.navigation_callbacks import register_navigation_callbacks
+from src.dashboard.callbacks.progression_callbacks import register_progression_callbacks
 from src.dashboard.callbacks.replay_callbacks import register_replay_callbacks
 from src.dashboard.callbacks.replay_strategy_callbacks import (
     register_replay_strategy_callbacks,
@@ -24,7 +24,7 @@ def create_app():
     register_session_callbacks(app)
     register_replay_callbacks(app)
     register_replay_strategy_callbacks(app)
-    register_grid_callbacks(app)
+    register_progression_callbacks(app)
     register_navigation_callbacks(app)
     return app
 app = create_app()

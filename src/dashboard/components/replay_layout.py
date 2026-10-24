@@ -1,19 +1,28 @@
 """Replay workspace: tab navigation, playback bar and the tab panels.
 
-Panels: track map + leaderboard (default), strategy, lap times, grid vs finish.
+Panels: track map + leaderboard (default), strategy, lap times, race progression.
 Switching tabs is handled in the browser (assets/navigation.js).
 """
 import dash_bootstrap_components as dbc
 from dash import dash_table, dcc, html
 
-from src.dashboard.components.grid_layout import grid_layout
-from src.dashboard.theme import ACCENT, TABLE_CELL, TABLE_HEADER, TABLE_STYLE, TABLE_ZEBRA, TEXT_MUTED
+from src.dashboard.components.progression_layout import progression_layout
+from src.dashboard.theme import (
+    ACCENT,
+    FASTEST_LAP,
+    PERSONAL_BEST,
+    TABLE_CELL,
+    TABLE_HEADER,
+    TABLE_STYLE,
+    TABLE_ZEBRA,
+    TEXT_MUTED,
+)
 
 TABS = [
     ("track", "Pálya"),
     ("strategy", "Stratégia"),
     ("laps", "Köridők"),
-    ("grid", "Rajt–cél"),
+    ("progress", "Versenyfolyamat"),
 ]
 
 
@@ -136,6 +145,9 @@ def _track_panel():
             {"if": {"filter_query": "{Position} = 1"}, "fontWeight": "800", "color": ACCENT},
             # Retired drivers: greyed out at the bottom of the table.
             {"if": {"filter_query": "{Status} contains 'Kiesett'"}, "color": TEXT_MUTED, "fontStyle": "italic"},
+            # Holder of the race's fastest lap so far (marked with a stopwatch).
+            {"if": {"filter_query": '{Driver} contains "⏱"', "column_id": "Driver"},
+             "color": FASTEST_LAP, "fontWeight": "800"},
         ],
     )
     track = dcc.Graph(
@@ -249,7 +261,14 @@ def _laps_panel():
         style_table=TABLE_STYLE,
         style_cell=TABLE_CELL,
         style_header=TABLE_HEADER,
-        style_data_conditional=[TABLE_ZEBRA],
+        style_data_conditional=[
+            TABLE_ZEBRA,
+            # Personal best in green, the race's fastest lap in purple, as on F1 timing screens.
+            {"if": {"filter_query": '{IsPersonalBest} = "✓"', "column_id": ["LapTime", "IsPersonalBest"]},
+             "color": PERSONAL_BEST, "fontWeight": "800"},
+            {"if": {"filter_query": '{LapTime} contains "⏱"', "column_id": "LapTime"},
+             "color": FASTEST_LAP, "fontWeight": "800"},
+        ],
     )
     return html.Div([
         dbc.Row(
@@ -271,7 +290,7 @@ def replay_layout():
         "track": _track_panel(),
         "strategy": _strategy_panel(),
         "laps": _laps_panel(),
-        "grid": grid_layout(),
+        "progress": progression_layout(),
     }
     return html.Div(
         id="replay-view",

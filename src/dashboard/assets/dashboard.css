@@ -176,10 +176,12 @@ body {
 .graph-tall { height: 440px !important; }
 .graph-medium { height: 340px !important; }
 .graph-short { height: 240px !important; }
+.graph-progression { height: 620px !important; }
 @media (max-width: 767px) {
   .graph-track { height: 380px !important; }
   .graph-tall { height: 360px !important; }
   .graph-medium { height: 280px !important; }
+  .graph-progression { height: 480px !important; }
 }
 
 @media (max-width: 575px) {
@@ -187,3 +189,13 @@ body {
   .what-if-row-label { flex-basis: 2.8rem; }
   .kpi-value { font-size: 1.1rem; }
 }
+
+/* Race progression legend */
+.progression-legend { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin-top: .5rem; color: var(--muted); font-size: .76rem; }
+.progression-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.legend-line { display: inline-block; width: 1.4rem; border-top: 2px dashed var(--ink); }
+.legend-pit { display: inline-block; width: .6rem; height: .6rem; border: 2px solid var(--ink); border-radius: 50%; }
+.legend-band { display: inline-block; width: .9rem; height: .7rem; border-radius: 2px; }
+.legend-band-sc { background: rgba(255, 214, 0, .45); }
+.legend-band-vsc { background: rgba(255, 176, 32, .4); }
+.legend-band-red { background: rgba(225, 6, 0, .55); }

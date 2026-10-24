@@ -12,6 +12,9 @@ LINE = "#2a2c36"
 TEXT = "#f2f3f5"
 TEXT_MUTED = "#9aa0ab"
 ACCENT = "#e10600"
+# F1 timing colours: purple = fastest overall, green = personal best.
+FASTEST_LAP = "#b44dff"
+PERSONAL_BEST = "#4ee08a"
 GRID = "#262833"
 FONT_FAMILY = "Inter, 'Segoe UI', Roboto, Arial, sans-serif"
 

@@ -155,6 +155,7 @@ def build_track_status(race_control, start_time, lap_start_seconds=None):
     track-level TRACK CLEAR/green flag, a session (re)start or the chequered
     flag. 'SAFETY CAR IN THIS LAP' and 'VSC ENDING' only mark it as ending.
     A new deployment (e.g. SC -> red flag) replaces the current period.
+    pit_lane_from marks when race control sent the field through the pit lane.
     Under a red flag the cars stop, so when the restart message is missing
     from the feed the red flag ends at the first lap start after a pause of
     at least RED_FLAG_PAUSE_SECONDS.
@@ -187,6 +188,8 @@ def build_track_status(race_control, start_time, lap_start_seconds=None):
                 status = "SC"
             elif current is not None and ("ENDING" in message or "IN THIS LAP" in message):
                 current["ending_from"] = at
+        if current is not None and "THROUGH THE PIT LANE" in message and current.get("pit_lane_from") is None:
+            current["pit_lane_from"] = at
         elif flag == "RED" or (category == "SessionStatus" and "ABORTED" in message):
             # An aborted session is a red-flag stoppage even without a RED FLAG message.
             status = "RED"
@@ -202,7 +205,7 @@ def build_track_status(race_control, start_time, lap_start_seconds=None):
             close(at)
         if status and (current is None or current["status"] != status):
             close(at)
-            current = {"status": status, "start": at, "end": None, "ending_from": None}
+            current = {"status": status, "start": at, "end": None, "ending_from": None, "pit_lane_from": None}
     close(None)
     starts = sorted(lap_start_seconds or [])
     for period in periods:
@@ -295,6 +298,65 @@ def tyre_state(stints, current_laps):
             "Stint": int(stint["stint_number"]),
         })
     return pd.DataFrame(rows, columns=["Driver", "Compound", "TyreLife", "Stint"])
+
+
+def enrich_lap_table(laps, stints, positions):
+    """Fill tyre, stint, position and personal-best columns of the replay lap table.
+
+    stints: OpenF1-style stint table with a Driver column (see STINT_COLUMNS).
+    positions: Driver -> DataFrame(TimeSeconds, position) of position changes.
+    Compound/TyreLife/Stint follow the leaderboard rule: the stint covering the
+    lap, tyre age = tyre_age_at_start + laps since the stint started.
+    Position is the last known position at the end of the lap.
+    Personal and overall fastest laps depend on the replay time, see fastest_laps.
+    """
+    laps = laps.copy()
+    if stints is not None and not stints.empty:
+        covered = laps[["Driver", "LapNumber"]].reset_index().merge(stints, on="Driver")
+        covered = covered[
+            (covered["lap_start"] <= covered["LapNumber"])
+            & (covered["lap_end"].isna() | (covered["LapNumber"] <= covered["lap_end"]))
+        ]
+        # On a shared boundary lap the later stint wins, as in build_stint_mapping.
+        covered = covered.sort_values("stint_number").groupby("index").tail(1).set_index("index")
+        laps["Compound"] = covered["compound"]
+        laps["TyreLife"] = covered["tyre_age_at_start"] + covered["LapNumber"] - covered["lap_start"]
+        laps["Stint"] = covered["stint_number"]
+
+    laps["Position"] = np.nan
+    for driver, driver_positions in (positions or {}).items():
+        mine = laps.index[(laps["Driver"] == driver) & laps["TimeSeconds"].notna()]
+        if driver_positions.empty or mine.empty:
+            continue
+        ends = laps.loc[mine, ["TimeSeconds"]].sort_values("TimeSeconds")
+        matched = pd.merge_asof(
+            ends.reset_index(), driver_positions.sort_values("TimeSeconds"),
+            on="TimeSeconds", direction="backward",
+        ).set_index("index")
+        laps.loc[matched.index, "Position"] = matched["position"]
+    return laps
+
+
+# Fastest-lap marker; U+FE0E asks for the plain (colourable) glyph, not the emoji.
+FASTEST_LAP_MARK = "\u23f1\ufe0e"
+
+
+def fastest_laps(laps, current_seconds):
+    """Fastest laps among laps completed by the replay time.
+
+    Returns (overall, personal): overall is the race's fastest lap so far as
+    {"Driver", "LapNumber", "LapTime"} or None; personal maps each driver to the
+    lap number of their single fastest lap so far (the earlier lap on a tie).
+    """
+    done = laps[(laps["TimeSeconds"] <= current_seconds) & laps["LapTime"].notna()]
+    if done.empty:
+        return None, {}
+    done = done.sort_values(["LapTime", "TimeSeconds"])
+    best = done.drop_duplicates("Driver")
+    personal = dict(zip(best["Driver"], best["LapNumber"].astype(int)))
+    top = best.iloc[0]
+    overall = {"Driver": top["Driver"], "LapNumber": int(top["LapNumber"]), "LapTime": float(top["LapTime"])}
+    return overall, personal
 
 
 def _fastf1_stints(session_laps):
@@ -860,14 +922,15 @@ def load_local_session_data(
                     laps[source],
                     errors="coerce",
                 )
+            # Filled after the loop from stints and position data (enrich_lap_table).
             for column in [
                 "Compound",
                 "TyreLife",
                 "Stint",
                 "Position",
+                "IsPersonalBest",
             ]:
                 laps[column] = np.nan
-            laps["IsPersonalBest"] = False
             laps_parts.append(laps[[
                 "Driver",
                 "DriverNumber",
@@ -919,6 +982,17 @@ def load_local_session_data(
         stints = stints.reindex(columns=STINT_COLUMNS)
     else:
         stints = pd.DataFrame(columns=STINT_COLUMNS)
+    names = {
+        number: str(driver.get("name_acronym", number)) for number, driver in replay.drivers.items()
+    }
+    positions = {
+        names.get(number, str(number)): pd.DataFrame({
+            "TimeSeconds": (group["date"] - replay.start_time).dt.total_seconds(),
+            "position": pd.to_numeric(group["position"], errors="coerce"),
+        })
+        for number, group in replay.positions.items()
+    }
+    laps = enrich_lap_table(laps, stints, positions)
     control_path = replay.data_dir / "race_control.json"
     race_control = pd.read_json(control_path) if control_path.exists() else pd.DataFrame()
     if "session_key" in race_control.columns:
