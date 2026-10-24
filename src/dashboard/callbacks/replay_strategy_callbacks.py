@@ -14,14 +14,10 @@ from dash.dependencies import Input, Output, State
 from src.dashboard import strategy_service, strategy_worker
 from src.dashboard.replay_player import format_lap_time
 from src.dashboard.replay_service import REPLAY_CACHE, time_to_lap
-from src.dashboard.theme import GRID, TEXT_MUTED
+from src.dashboard.theme import COMPOUND_COLORS, COMPOUND_NAMES, COMPOUND_TEXT, GRID, TEXT_MUTED
 from src.simulator import strategy_advisor as advisor
 
 SUPPORTED_COMPOUNDS = advisor.DRY_COMPOUNDS
-# Official tyre colours; light compounds need dark text on top of them.
-COMPOUND_COLORS = {"SOFT": "#e10600", "MEDIUM": "#ffd12e", "HARD": "#f2f2f2"}
-COMPOUND_TEXT = {"SOFT": "#ffffff", "MEDIUM": "#111111", "HARD": "#111111"}
-COMPOUND_NAMES = {"SOFT": "Soft", "MEDIUM": "Medium", "HARD": "Hard"}
 
 
 def _empty_figure(message=""):

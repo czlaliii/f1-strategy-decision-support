@@ -8,6 +8,8 @@
   --muted: #9aa0ab;
   --accent: #e10600;
   --accent-dark: #b30500;
+  --personal-best: #4ee08a;
+  --fastest-lap: #b44dff;
   --f1-red: var(--accent);
   --f1-red-dark: var(--accent-dark);
 }
@@ -137,7 +139,38 @@ body {
 .compound-pill { display: inline-block; padding: .15rem .6rem; border-radius: 999px; font-size: .85rem; font-weight: 850; }
 .tyre-status-box { padding: .85rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--surface-raised); }
 .tyre-wear-bar { height: 1.1rem; margin-top: .35rem; font-weight: 800; background: #2a2c36; }
-.driver-info { padding: .85rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--surface-raised); color: var(--ink); font-size: .9rem; line-height: 1.7; }
+
+/* --- Driver detail card (lap times tab) --- */
+.driver-card { position: relative; overflow: hidden; padding: 1rem 1rem 1rem 1.25rem; border: 1px solid var(--line); border-radius: .75rem; background: linear-gradient(135deg, var(--surface-raised), var(--surface)); }
+.driver-card::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 5px; background: var(--team-color, var(--accent)); }
+.driver-card-empty { color: var(--muted); font-size: .9rem; }
+.driver-card-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem .75rem; margin-bottom: .9rem; }
+.driver-card-position { padding: .1rem .5rem; border-radius: .35rem; background: var(--accent); color: #fff; font-size: .85rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.driver-card-name { color: #fff; font-size: 1.6rem; font-weight: 900; letter-spacing: .04em; line-height: 1; }
+.driver-card-lap { margin-left: auto; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.driver-card-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.driver-stat { padding: .6rem .7rem; border: 1px solid var(--line); border-radius: .55rem; background: rgba(255, 255, 255, .02); }
+.driver-stat-label { color: var(--muted); font-size: .64rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.driver-stat-value { margin-top: .25rem; color: #fff; font-size: 1.15rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+.driver-stat-value.is-personal-best { color: var(--personal-best); }
+.driver-stat-value.is-fastest { color: var(--fastest-lap); }
+.driver-stat-sub { margin-top: .1rem; color: var(--muted); font-size: .74rem; }
+
+/* --- Weather strip under the track map --- */
+.weather-panel { margin-top: .6rem; padding-top: .6rem; border-top: 1px solid var(--line); }
+.weather-title { margin-bottom: .45rem; color: var(--muted); font-size: .66rem; font-weight: 850; letter-spacing: .12em; }
+.weather-empty { color: var(--muted); font-size: .85rem; }
+.weather-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .45rem; }
+.weather-tile { min-width: 0; padding: .5rem .6rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface-raised); }
+.weather-label { color: var(--muted); font-size: .6rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.weather-value { margin-top: .15rem; color: #fff; font-size: 1rem; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.weather-sub, .weather-trend { margin-top: .1rem; color: var(--muted); font-size: .68rem; }
+.weather-tile.is-rain { border-color: #3fa7ff; background: rgba(63, 167, 255, .12); }
+.weather-tile.is-rain .weather-value { color: #3fa7ff; }
+.weather-tile.is-dry .weather-value { color: #4ee08a; }
+.wind-arrow { display: inline-block; color: #fff; }
+@media (max-width: 1199px) { .weather-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 575px) { .weather-grid, .driver-card-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* --- What-if: actual pit stop versus the model's plan --- */
 .what-if-card { margin-bottom: .75rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .7rem; background: var(--surface-raised); }
@@ -199,3 +232,16 @@ body {
 .legend-band-sc { background: rgba(255, 214, 0, .45); }
 .legend-band-vsc { background: rgba(255, 176, 32, .4); }
 .legend-band-red { background: rgba(225, 6, 0, .55); }
+
+/* DataTable hover tooltips (fastest lap in the leaderboard) in the dark theme.
+   Dash sizes them to 300px and centres them on the cell; sized to the text
+   instead, and the leaderboard panel lets them extend past its edge. */
+.leaderboard-panel { overflow: visible; }
+.dash-tooltip { border: 1px solid var(--fastest-lap) !important; border-radius: .45rem !important; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
+.dash-tooltip .dash-table-tooltip { min-width: 0 !important; max-width: 240px !important; width: max-content; padding: .4rem .65rem !important; border-radius: .45rem; background: var(--surface-raised) !important; color: var(--ink) !important; font-size: .8rem; line-height: 1.35; text-align: left; white-space: normal; }
+.dash-tooltip .dash-table-tooltip p { margin: 0; }
+.dash-tooltip .dash-table-tooltip strong { color: var(--fastest-lap); }
+.dash-tooltip[data-attr-anchor='top']:after { border-bottom-color: var(--surface-raised) !important; }
+.dash-tooltip[data-attr-anchor='top']:before { border-bottom-color: var(--fastest-lap) !important; }
+.dash-tooltip[data-attr-anchor='bottom']:after { border-top-color: var(--surface-raised) !important; }
+.dash-tooltip[data-attr-anchor='bottom']:before { border-top-color: var(--fastest-lap) !important; }

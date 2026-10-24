@@ -26,6 +26,39 @@ TABS = [
 ]
 
 
+def leaderboard_styles(selected_driver=None):
+    """Leaderboard styles; the selected driver's row is highlighted."""
+    styles = [TABLE_ZEBRA]
+    if selected_driver:
+        # Acronyms are three letters, so "contains" also matches "VER ⏱".
+        selected = f'{{Driver}} contains "{selected_driver}"'
+        styles += [
+            {"if": {"filter_query": selected}, "backgroundColor": "rgba(225, 6, 0, .22)", "color": "#ffffff", "fontWeight": "800"},
+            {"if": {"filter_query": selected, "column_id": "Position"}, "boxShadow": f"inset 4px 0 0 {ACCENT}"},
+        ]
+    styles += [
+        {"if": {"filter_query": "{Position} = 1"}, "fontWeight": "800", "color": ACCENT},
+        # Retired drivers: greyed out at the bottom of the table.
+        {"if": {"filter_query": "{Status} contains 'Kiesett'"}, "color": TEXT_MUTED, "fontStyle": "italic"},
+        # Holder of the race's fastest lap so far (marked with a stopwatch).
+        {"if": {"filter_query": '{Driver} contains "⏱"', "column_id": "Driver"},
+         "color": FASTEST_LAP, "fontWeight": "800"},
+    ]
+    return styles
+
+
+def lap_table_styles(personal_best_lap=None):
+    """Lap table styles: personal best lap time in green, the race's fastest lap in purple."""
+    styles = [TABLE_ZEBRA]
+    if personal_best_lap is not None:
+        styles.append({"if": {"filter_query": f"{{LapNumber}} = {int(personal_best_lap)}", "column_id": "LapTime"},
+                       "color": PERSONAL_BEST, "fontWeight": "800"})
+    # Listed last so it wins when the personal best is also the fastest lap.
+    styles.append({"if": {"filter_query": '{LapTime} contains "⏱"', "column_id": "LapTime"},
+                   "color": FASTEST_LAP, "fontWeight": "800"})
+    return styles
+
+
 def _panel(title, body, class_name=""):
     return dbc.Card(
         className=f"replay-panel h-100 {class_name}",
@@ -44,6 +77,8 @@ def _stores():
         dcc.Store(id="replay-view-state"),
         # Last shown track status, so the banner is sent only when it changes.
         dcc.Store(id="track-status-key"),
+        # Lap of the shown weather strip, so it is sent once per lap.
+        dcc.Store(id="weather-key"),
         dcc.Store(id="live-strategy-state", data={}),
         # Strategy job queued for the worker process, and a poll for its result.
         dcc.Store(id="strategy-request"),
@@ -137,18 +172,14 @@ def _track_panel():
         data=[],
         page_size=22,
         sort_action="native",
+        # Hover text on the fastest-lap holder (see update_replay_view).
+        tooltip_data=[],
+        tooltip_delay=0,
+        tooltip_duration=None,
         style_table=TABLE_STYLE,
         style_cell={**TABLE_CELL, "textAlign": "center", "fontSize": "12px", "padding": "7px 6px"},
         style_header=TABLE_HEADER,
-        style_data_conditional=[
-            TABLE_ZEBRA,
-            {"if": {"filter_query": "{Position} = 1"}, "fontWeight": "800", "color": ACCENT},
-            # Retired drivers: greyed out at the bottom of the table.
-            {"if": {"filter_query": "{Status} contains 'Kiesett'"}, "color": TEXT_MUTED, "fontStyle": "italic"},
-            # Holder of the race's fastest lap so far (marked with a stopwatch).
-            {"if": {"filter_query": '{Driver} contains "⏱"', "column_id": "Driver"},
-             "color": FASTEST_LAP, "fontWeight": "800"},
-        ],
+        style_data_conditional=leaderboard_styles(),
     )
     track = dcc.Graph(
         id="replay-track",
@@ -169,10 +200,11 @@ def _track_panel():
                 _panel("PÁLYA FELÜLNÉZET", [
                     html.Div("Nincs betöltött session", id="track-status-banner", className="track-status track-status-none"),
                     track,
+                    html.Div(id="weather-panel", className="weather-panel"),
                 ]),
                 xs=12, xl=7,
             ),
-            dbc.Col(_panel("LEADERBOARD", leaderboard), xs=12, xl=5),
+            dbc.Col(_panel("LEADERBOARD", leaderboard, "leaderboard-panel"), xs=12, xl=5),
         ],
     )
 
@@ -261,20 +293,13 @@ def _laps_panel():
         style_table=TABLE_STYLE,
         style_cell=TABLE_CELL,
         style_header=TABLE_HEADER,
-        style_data_conditional=[
-            TABLE_ZEBRA,
-            # Personal best in green, the race's fastest lap in purple, as on F1 timing screens.
-            {"if": {"filter_query": '{IsPersonalBest} = "✓"', "column_id": ["LapTime", "IsPersonalBest"]},
-             "color": PERSONAL_BEST, "fontWeight": "800"},
-            {"if": {"filter_query": '{LapTime} contains "⏱"', "column_id": "LapTime"},
-             "color": FASTEST_LAP, "fontWeight": "800"},
-        ],
+        style_data_conditional=lap_table_styles(),
     )
     return html.Div([
         dbc.Row(
             className="g-3",
             children=[
-                dbc.Col(_panel("VERSENYZŐI RÉSZLETEK", html.Div(id="replay-current-info", className="driver-info")), xs=12, lg=4),
+                dbc.Col(_panel("VERSENYZŐI RÉSZLETEK", html.Div(id="replay-current-info")), xs=12, lg=4),
                 dbc.Col(
                     _panel("KÖRIDŐK ALAKULÁSA", dcc.Graph(id="replay-chart", config={"displaylogo": False, "responsive": True}, className="dashboard-graph graph-medium")),
                     xs=12, lg=8,

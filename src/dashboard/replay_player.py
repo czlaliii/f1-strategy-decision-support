@@ -359,6 +359,35 @@ def fastest_laps(laps, current_seconds):
     return overall, personal
 
 
+WEATHER_COLUMNS = [
+    "TimeSeconds", "air_temperature", "track_temperature", "humidity",
+    "pressure", "rainfall", "wind_speed", "wind_direction",
+]
+
+
+def load_weather(path, session_key, start_time):
+    """OpenF1 weather samples (about one a minute) on the replay clock."""
+    if not Path(path).exists():
+        return pd.DataFrame(columns=WEATHER_COLUMNS)
+    weather = pd.read_json(path)
+    if weather.empty or "date" not in weather.columns:
+        return pd.DataFrame(columns=WEATHER_COLUMNS)
+    if "session_key" in weather.columns:
+        weather = weather.loc[pd.to_numeric(weather["session_key"], errors="coerce") == session_key]
+    times = pd.to_datetime(weather["date"], utc=True, format="mixed")
+    weather = weather.assign(TimeSeconds=(times - start_time).dt.total_seconds())
+    return weather.reindex(columns=WEATHER_COLUMNS).sort_values("TimeSeconds").reset_index(drop=True)
+
+
+def weather_at(weather, seconds):
+    """Latest weather sample at or before `seconds` (the first one before it exists), or None."""
+    if weather is None or weather.empty:
+        return None
+    earlier = weather[weather["TimeSeconds"] <= seconds]
+    row = earlier.iloc[-1] if not earlier.empty else weather.iloc[0]
+    return row.to_dict()
+
+
 def _fastf1_stints(session_laps):
     """Build an OpenF1-style stint table from FastF1 laps (TyreLife counts the lap itself)."""
     laps = session_laps.dropna(subset=["Stint", "LapNumber"])
@@ -1016,6 +1045,7 @@ def load_local_session_data(
             race_control, replay.start_time, laps["LapStartTime"].dropna().tolist()
         ),
         "retirements": find_retirements(laps, finish_seconds),
+        "weather": load_weather(replay.data_dir / "weather.json", replay.session_key, replay.start_time),
     }
 
 def build_current_snapshot(frames_by_driver, current_time_seconds):

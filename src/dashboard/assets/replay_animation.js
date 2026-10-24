@@ -12,11 +12,15 @@
     var MAX_LEAD_SECONDS = 1.0;
     // Redraws slower than this switch to every second frame, keeping an even rhythm.
     var SLOW_DRAW_MS = 12;
+    // Car marker style; the selected driver is larger with a red outline.
+    var CAR = {size: 15, line: "#ffffff", width: 2, text: 11};
+    var SELECTED = {size: 24, line: "#e10600", width: 4, text: 14};
 
     var state = {
         anchor: null,     // last server clock: {time, at, playing, speed}
         rate: null,       // observed replay seconds per real second
         data: null,       // position window from the server
+        selected: null,   // driver chosen in the dropdown
         shown: null,      // replay time currently drawn
         lastFrame: null,
         lastDrawn: null,
@@ -24,8 +28,12 @@
         everyOther: false
     };
 
-    function sync(clock, paused, speed, data) {
+    function sync(clock, paused, speed, data, driver) {
         var now = performance.now();
+        if (driver !== state.selected) {
+            state.selected = driver || null;
+            state.lastDrawn = null;  // redraw the markers even when paused
+        }
         var time = Number(clock) || 0;
         var playing = !paused;
         speed = Number(speed) || 1;
@@ -77,7 +85,8 @@
         var i = Math.min(Math.floor(pos), last);
         var j = Math.min(i + 1, last);
         var f = pos - i;
-        var out = {x: [], y: [], text: [], color: []};
+        var out = {x: [], y: [], text: [], color: [], size: [], line: [], width: [], font: []};
+        var chosen = null;
         for (var k = 0; k < d.drivers.length; k++) {
             var x0 = d.x[k][i], y0 = d.y[k][i], x1 = d.x[k][j], y1 = d.y[k][j];
             var x, y;
@@ -91,12 +100,28 @@
             } else {
                 continue;  // no sample: the car is not shown
             }
-            out.x.push(x);
-            out.y.push(y);
-            out.text.push(d.drivers[k]);
-            out.color.push(d.colors[k]);
+            if (d.drivers[k] === state.selected) {
+                chosen = {x: x, y: y, k: k};
+                continue;
+            }
+            push(out, x, y, d.drivers[k], d.colors[k], CAR);
+        }
+        // Drawn last, so it stays on top of the other cars.
+        if (chosen) {
+            push(out, chosen.x, chosen.y, d.drivers[chosen.k], d.colors[chosen.k], SELECTED);
         }
         return out;
+    }
+
+    function push(out, x, y, name, color, style) {
+        out.x.push(x);
+        out.y.push(y);
+        out.text.push(name);
+        out.color.push(color);
+        out.size.push(style.size);
+        out.line.push(style.line);
+        out.width.push(style.width);
+        out.font.push(style.text);
     }
 
     function frame(now) {
@@ -126,7 +151,11 @@
         var started = performance.now();
         window.Plotly.restyle(
             graph,
-            {x: [cars.x], y: [cars.y], text: [cars.text], "marker.color": [cars.color]},
+            {
+                x: [cars.x], y: [cars.y], text: [cars.text], "marker.color": [cars.color],
+                "marker.size": [cars.size], "marker.line.color": [cars.line],
+                "marker.line.width": [cars.width], "textfont.size": [cars.font]
+            },
             [carTrace]
         );
         state.everyOther = performance.now() - started > SLOW_DRAW_MS;

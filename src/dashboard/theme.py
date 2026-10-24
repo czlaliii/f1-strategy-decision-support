@@ -16,6 +16,10 @@ ACCENT = "#e10600"
 FASTEST_LAP = "#b44dff"
 PERSONAL_BEST = "#4ee08a"
 GRID = "#262833"
+# Official tyre colours; light compounds need dark text on top of them.
+COMPOUND_COLORS = {"SOFT": "#e10600", "MEDIUM": "#ffd12e", "HARD": "#f2f2f2", "INTERMEDIATE": "#43b02a", "WET": "#0067ad"}
+COMPOUND_TEXT = {"SOFT": "#ffffff", "MEDIUM": "#111111", "HARD": "#111111", "INTERMEDIATE": "#ffffff", "WET": "#ffffff"}
+COMPOUND_NAMES = {"SOFT": "Soft", "MEDIUM": "Medium", "HARD": "Hard", "INTERMEDIATE": "Inter", "WET": "Wet"}
 FONT_FAMILY = "Inter, 'Segoe UI', Roboto, Arial, sans-serif"
 
 TABLE_STYLE = {"overflowX": "auto"}

@@ -8,6 +8,8 @@ import plotly.express as px
 from dash import ClientsideFunction, State, ctx, no_update
 from dash.dependencies import Input, Output
 
+from src.dashboard.components.race_info import driver_card, driver_card_message, weather_strip
+from src.dashboard.components.replay_layout import lap_table_styles, leaderboard_styles
 from src.dashboard.config import PROJECT_ROOT
 from src.dashboard.theme import FASTEST_LAP, GRID, PERSONAL_BEST
 from src.dashboard.replay_player import (
@@ -22,6 +24,7 @@ from src.dashboard.replay_player import (
     load_local_session_data,
     load_session_data,
     track_status_at,
+    weather_at,
 )
 from src.dashboard.replay_service import (
     REPLAY_CACHE,
@@ -42,7 +45,6 @@ LAP_COLUMN_NAMES = {
     "TyreLife": "Gumikor",
     "Stint": "Stint",
     "Position": "Pozíció",
-    "IsPersonalBest": "Egyéni legjobb",
 }
 # Candidate spacings (s) for lap-time axis ticks; the smallest giving <= 7 ticks is used.
 LAP_TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 30, 60]
@@ -217,6 +219,7 @@ def register_replay_callbacks(app):
                 "stints": replay.get("stints"),
                 "track_status": replay.get("track_status"),
                 "retirements": replay.get("retirements", {}),
+                "weather": replay.get("weather"),
                 # Set only for locally stored races; used by the strategy advisor.
                 "race_folder": race_folder,
                 "session_key": local_session_key,
@@ -341,6 +344,8 @@ def register_replay_callbacks(app):
         Output("replay-table", "data"),
         Output("replay-chart", "figure"),
         Output("replay-view-state", "data"),
+        Output("leaderboard-table", "tooltip_data"),
+        Output("replay-table", "style_data_conditional"),
         Input("replay-data-store", "data"),
         Input("replay-clock-store", "data"),
         Input("replay-driver", "value"),
@@ -350,15 +355,15 @@ def register_replay_callbacks(app):
         if not data or current_time is None:
             return (
                 "00:00:00", "00:00:00", [],
-                "Nincs betöltött session.", [], [], {}, None,
+                driver_card_message("Nincs betöltött session."), [], [], {}, None, [], lap_table_styles(),
             )
         replay_id = data.get("replay_id")
         replay = REPLAY_CACHE.get(replay_id)
         if replay is None:
             return (
                 "00:00:00", "00:00:00", [],
-                "A replay adatai nem találhatók. Töltsd be újra a sessiont.",
-                [], [], {}, None,
+                driver_card_message("A replay adatai nem találhatók. Töltsd be újra a sessiont."),
+                [], [], {}, None, [], lap_table_styles(),
             )
         frames = replay["frames"]
         laps = replay["laps"]
@@ -377,10 +382,15 @@ def register_replay_callbacks(app):
         )
         # Fastest lap of the race so far: purple stopwatch next to the driver.
         overall, personal = fastest_laps(laps, current_time)
+        # Hover text on the holder: lap time and lap of the fastest lap.
+        tooltips = [{} for _ in range(len(leaderboard))]
         if overall is not None and not leaderboard.empty:
             holder = leaderboard["Driver"] == overall["Driver"]
             if holder.any():
                 leaderboard.loc[holder, "Driver"] = leaderboard.loc[holder, "Driver"] + f" {FASTEST_LAP_MARK}"
+                text = f"**Leggyorsabb kör**  \n{format_lap_time(overall['LapTime'])} · {overall['LapNumber']}. kör"
+                for position in np.flatnonzero(holder.to_numpy()):
+                    tooltips[position] = {"Driver": {"value": text, "type": "markdown"}}
         current_time_text = format_elapsed_time(current_time)
         total_time_text = format_elapsed_time(total_time)
         if driver is None:
@@ -388,11 +398,13 @@ def register_replay_callbacks(app):
                 current_time_text,
                 total_time_text,
                 records_from_dataframe(leaderboard),
-                "Válassz versenyzőt.",
+                driver_card_message("Válassz versenyzőt."),
                 [],
                 [],
                 {},
                 None,
+                tooltips,
+                lap_table_styles(),
             )
         driver_laps = laps.loc[
             (laps["Driver"] == driver)
@@ -405,21 +417,16 @@ def register_replay_callbacks(app):
             if overall is not None else pd.Series(False, index=driver_laps.index)
         )
         if driver_laps.empty:
-            info = f"{driver}: még nincs befejezett köradat."
+            info = driver_card_message(f"{driver}: még nincs befejezett köradat.")
         else:
             # Everything from the last completed lap, so it matches the lap table.
             row = driver_laps.sort_values("TimeSeconds").iloc[-1]
-
-            def shown(value):
-                return "–" if pd.isna(value) else int(value) if isinstance(value, float) else value
-
-            info = (
-                f"{driver} | {int(row['LapNumber'])}. kör | "
-                f"Utolsó köridő: {format_lap_time(row['LapTime'])} | "
-                f"Gumi: {shown(row.get('Compound'))} | "
-                f"Gumikor: {shown(row.get('TyreLife'))} kör | "
-                f"Stint: {shown(row.get('Stint'))} | "
-                f"Pozíció: {shown(row.get('Position'))}"
+            best = driver_laps.loc[driver_laps["IsPersonalBest"]]
+            info = driver_card(
+                driver, row,
+                best.iloc[0] if not best.empty else None,
+                replay.get("driver_colors", {}).get(driver),
+                is_fastest=bool(is_overall.any()),
             )
         preferred_columns = [
             "LapNumber",
@@ -431,7 +438,6 @@ def register_replay_callbacks(app):
             "TyreLife",
             "Stint",
             "Position",
-            "IsPersonalBest",
         ]
         available_columns = [
             column for column in preferred_columns
@@ -450,6 +456,8 @@ def register_replay_callbacks(app):
                 no_update,
                 no_update,
                 no_update,
+                no_update,
+                tooltips,
                 no_update,
             )
         # Show the latest completed lap first in the table.
@@ -475,10 +483,6 @@ def register_replay_callbacks(app):
         for column in ["TyreLife", "Stint", "Position"]:
             if column in lap_table.columns:
                 lap_table[column] = pd.to_numeric(lap_table[column], errors="coerce").astype("Int64")
-        if "IsPersonalBest" in lap_table.columns:
-            lap_table["IsPersonalBest"] = lap_table["IsPersonalBest"].map(
-                lambda value: "✓" if value is True or value == 1 else ""
-            )
         table_columns = [
             {"name": LAP_COLUMN_NAMES.get(column, column), "id": column}
             for column in available_columns
@@ -568,6 +572,8 @@ def register_replay_callbacks(app):
             records_from_dataframe(lap_table),
             chart,
             view_key,
+            tooltips,
+            lap_table_styles(personal.get(driver)),
         )
 
     @app.callback(
@@ -652,6 +658,40 @@ def register_replay_callbacks(app):
             return no_update, no_update, no_update
         return label, f"track-status track-status-{modifier}", key
 
+    @app.callback(
+        Output("leaderboard-table", "style_data_conditional"),
+        Input("replay-driver", "value"),
+    )
+    def highlight_selected_driver(driver):
+        return leaderboard_styles(driver)
+
+    @app.callback(
+        Output("weather-panel", "children"),
+        Output("weather-key", "data"),
+        Input("replay-clock-store", "data"),
+        Input("replay-data-store", "data"),
+        State("weather-key", "data"),
+    )
+    def show_weather(current_time, data, shown_key):
+        """Weather at the start of the current lap; sent only when the lap changes."""
+        replay_id = (data or {}).get("replay_id")
+        replay = REPLAY_CACHE.get(replay_id)
+        if replay is None or current_time is None:
+            return weather_strip(None), None
+        lap = time_to_lap(replay_id, float(current_time))
+        key = f"{replay_id}|{lap}"
+        if key == shown_key:
+            return no_update, no_update
+        starts = get_lap_start_times(replay_id)
+        weather = replay.get("weather")
+        start = float(starts.get(lap, current_time)) if not starts.empty else float(current_time)
+        previous = float(starts[lap - 1]) if lap - 1 in starts.index else None
+        return weather_strip(
+            weather_at(weather, start),
+            weather_at(weather, previous) if previous is not None else None,
+            lap,
+        ), key
+
     app.clientside_callback(
         ClientsideFunction(namespace="replay", function_name="sync"),
         Output("replay-anim-anchor", "data"),
@@ -659,4 +699,5 @@ def register_replay_callbacks(app):
         Input("replay-interval", "disabled"),
         Input("replay-speed", "value"),
         Input("replay-anim-data", "data"),
+        Input("replay-driver", "value"),
     )

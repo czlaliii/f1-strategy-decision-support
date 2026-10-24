@@ -52,7 +52,7 @@ def test_lap_time_ticks_are_minutes_and_seconds():
     assert labels[:2] == ["1:35.000", "1:40.000"] and "2:00.000" in labels
 
 
-def test_replay_view_handles_driver_without_completed_laps():
+def test_replay_view_handles_driver_without_completed_laps(monkeypatch):
     """Regression: right after loading, the selected driver has no completed lap."""
     from src.dashboard.callbacks import replay_callbacks
     from src.dashboard.replay_service import REPLAY_CACHE
@@ -86,10 +86,48 @@ def test_replay_view_handles_driver_without_completed_laps():
     REPLAY_CACHE["empty-test"] = {
         "laps": laps, "frames": frames, "frames_by_driver": {d: g for d, g in frames.groupby("Driver")},
     }
+    # Leaderboard order is not under test here; a fixed one keeps the rows known.
+    monkeypatch.setattr(replay_callbacks, "build_leaderboard", lambda *args: pd.DataFrame({"Driver": ["PIA", "NOR"]}))
     try:
         before = app.functions["update_replay_view"]({"replay_id": "empty-test"}, 0.0, "NOR", None)
         assert before[5] == []  # no completed laps yet
         after = app.functions["update_replay_view"]({"replay_id": "empty-test"}, 95.0, "PIA", None)
         assert "⏱" in after[5][0]["LapTime"]
+        # The personal best column is gone; the lap time is coloured instead.
+        assert "IsPersonalBest" not in after[5][0]
+        assert any("{LapNumber} = 1" in str(style) for style in after[9])
+        # Hover text only on the fastest-lap holder in the leaderboard.
+        assert after[8][0]["Driver"] == {"value": "**Leggyorsabb kör**  \n1:29.000 · 1. kör", "type": "markdown"}
+        assert after[8][1] == {}
     finally:
         REPLAY_CACHE.pop("empty-test", None)
+
+
+def test_weather_at_returns_latest_sample_before_time():
+    from src.dashboard.replay_player import weather_at
+
+    weather = pd.DataFrame({"TimeSeconds": [0.0, 60.0, 120.0], "air_temperature": [20.0, 21.0, 22.0]})
+    assert weather_at(weather, 90.0)["air_temperature"] == 21.0
+    # Before the first sample the first one is used; no data gives None.
+    assert weather_at(weather, -5.0)["air_temperature"] == 20.0
+    assert weather_at(pd.DataFrame(), 10.0) is None
+
+
+def test_weather_strip_shows_rain_and_change_since_previous_lap():
+    from src.dashboard.components.race_info import weather_strip
+
+    current = {"air_temperature": 21.5, "track_temperature": 30.0, "humidity": 60, "pressure": 1012,
+               "rainfall": 1, "wind_speed": 2.0, "wind_direction": 180}
+    previous = {**current, "track_temperature": 31.2}
+    text = str(weather_strip(current, previous, 12))
+    assert "12. KÖR" in text and "Eső" in text
+    assert "▼ 1.2 az előző körhöz" in text
+    assert "D felől" in text
+
+
+def test_leaderboard_highlights_selected_driver():
+    from src.dashboard.components.replay_layout import leaderboard_styles
+
+    assert not any("rgba(225, 6, 0" in str(style) for style in leaderboard_styles(None))
+    selected = [s for s in leaderboard_styles("VER") if s.get("backgroundColor") == "rgba(225, 6, 0, .22)"]
+    assert selected and selected[0]["if"]["filter_query"] == '{Driver} contains "VER"'
