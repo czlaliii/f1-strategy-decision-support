@@ -3,6 +3,9 @@
 The functions only take and return plain data, so they can cross the process
 boundary. Datasets, models and finished "what if" analyses stay in the
 worker's memory between laps.
+
+Simulations use the structured model anchored to the XGBoost next-lap
+estimate at the decision lap (see lap_time_models.AnchoredLapTimeModel).
 """
 import pandas as pd
 
@@ -13,9 +16,10 @@ from src.models.expanding_window_model import (
     fill_with_training_medians,
     load_or_train_model,
 )
+from src.models.lap_time_models import add_model_features, anchored_model
 from src.simulator import strategy_advisor as advisor
 
-# Per-race dataset and model, kept in the worker's memory.
+# Per-race dataset, trained models and XGBoost feature rows, kept in the worker's memory.
 _RACE_RESOURCES: dict[tuple[str, int], tuple] = {}
 # (race, session, driver, pit lap) -> what-if result; a stop is analysed once.
 _WHAT_IF_CACHE: dict[tuple, dict] = {}
@@ -25,8 +29,13 @@ def _race_resources(race_folder, session_key):
     key = (race_folder, int(session_key))
     if key not in _RACE_RESOURCES:
         dataset = load_race_dataset(race_folder, int(session_key))
-        model = load_or_train_model(race_folder)
-        _RACE_RESOURCES[key] = (dataset, model)
+        trained = load_or_train_model(race_folder)
+        feature_rows = add_model_features(dataset)
+        feature_rows.index = pd.MultiIndex.from_arrays([
+            pd.to_numeric(feature_rows["driver_number"], errors="coerce"),
+            pd.to_numeric(feature_rows["lap_number"], errors="coerce"),
+        ])
+        _RACE_RESOURCES[key] = (dataset, trained, feature_rows)
     return _RACE_RESOURCES[key]
 
 
@@ -64,18 +73,30 @@ def _state_at(model, driver_data, lap):
     return state_row, state
 
 
-def _evaluate_from(model, driver_data, lap, race_last_lap):
-    """Simulated strategies from the end of `lap`, or a reason string."""
-    state_row, state = _state_at(model, driver_data, lap)
+def _predictor(trained, feature_rows, state_row, state):
+    """Structured model anchored to XGBoost at this state; plain structured model if not possible."""
+    key = (pd.to_numeric(state_row.get("driver_number"), errors="coerce"), int(state["lap_number"]))
+    if trained.xgboost is None or key not in feature_rows.index:
+        return trained.pipeline
+    row = feature_rows.loc[key]
+    if isinstance(row, pd.DataFrame):
+        row = row.iloc[0]
+    return anchored_model(trained.pipeline, trained.xgboost, row, state)
+
+
+def _evaluate_from(trained, feature_rows, driver_data, lap, race_last_lap):
+    """(state row, state, predictor, simulated strategies) from the end of `lap`; results may be a reason string."""
+    state_row, state = _state_at(trained.pipeline, driver_data, lap)
     if state_row is None:
-        return None, None, state
+        return None, None, None, state
     lap_numbers = pd.to_numeric(driver_data["lap_number"], errors="coerce")
     used = set(driver_data.loc[lap_numbers <= lap, "compound"].dropna())
     strategies = advisor.candidate_strategies(lap, race_last_lap, state["compound"], used)
     if not strategies:
-        return None, None, "Nincs a szabályoknak megfelelő stratégia a verseny hátralévő részére."
-    results = advisor.evaluate_strategies(model, state, strategies, race_last_lap, PIT_LOSS_SECONDS)
-    return state_row, state, results
+        return None, None, None, "Nincs a szabályoknak megfelelő stratégia a verseny hátralévő részére."
+    predictor = _predictor(trained, feature_rows, state_row, state)
+    results = advisor.evaluate_strategies(predictor, state, strategies, race_last_lap, PIT_LOSS_SECONDS)
+    return state_row, state, predictor, results
 
 
 def _actual_segments(driver_data, up_to_lap):
@@ -89,7 +110,7 @@ def _actual_segments(driver_data, up_to_lap):
     ]
 
 
-def _what_if(cache_key, model, driver_data, stop, previous_stop_lap, race_last_lap):
+def _what_if(cache_key, trained, feature_rows, driver_data, stop, previous_stop_lap, race_last_lap):
     """Compare an actual pit stop with the model's best plan from a few laps before it."""
     if cache_key in _WHAT_IF_CACHE:
         return _WHAT_IF_CACHE[cache_key]
@@ -98,7 +119,7 @@ def _what_if(cache_key, model, driver_data, stop, previous_stop_lap, race_last_l
         result = {**base, "status": "skipped", "reason": "Nem száraz keverék; a modell csak száraz versenyt szimulál."}
     else:
         decision = advisor.decision_lap(stop["lap"], previous_stop_lap)
-        _, _, results = _evaluate_from(model, driver_data, decision, race_last_lap)
+        *_, results = _evaluate_from(trained, feature_rows, driver_data, decision, race_last_lap)
         if isinstance(results, str):
             result = {**base, "status": "skipped", "reason": results}
         else:
@@ -125,13 +146,13 @@ def _what_if(cache_key, model, driver_data, stop, previous_stop_lap, race_last_l
     return result
 
 
-def _what_ifs(race_key, driver_number, model, driver_data, current_lap, race_last_lap):
+def _what_ifs(race_key, driver_number, trained, feature_rows, driver_data, current_lap, race_last_lap):
     """What-if analyses for every stop completed before the current lap."""
     stops = [s for s in advisor.actual_pit_stops(driver_data) if s["lap"] < current_lap]
     analyses, previous = [], None
     for stop in stops:
         key = (*race_key, driver_number, stop["lap"])
-        analyses.append(_what_if(key, model, driver_data, stop, previous, race_last_lap))
+        analyses.append(_what_if(key, trained, feature_rows, driver_data, stop, previous, race_last_lap))
         previous = stop["lap"]
     return {"analyses": analyses, "actual_segments": _actual_segments(driver_data, current_lap)}
 
@@ -139,7 +160,7 @@ def _what_ifs(race_key, driver_number, model, driver_data, current_lap, race_las
 def compute_strategy(race_folder, session_key, driver_number, current_lap):
     """Recommendation, tyre insights and what-if analyses for one driver at the end of current_lap."""
     try:
-        dataset, trained = _race_resources(race_folder, session_key)
+        dataset, trained, feature_rows = _race_resources(race_folder, session_key)
     except (InsufficientHistoryError, RaceDataError) as error:
         return _message(f"Ehhez a versenyhez nem készíthető modell: {error}")
     model = trained.pipeline
@@ -147,7 +168,8 @@ def compute_strategy(race_folder, session_key, driver_number, current_lap):
     race_last_lap = int(pd.to_numeric(dataset["lap_number"], errors="coerce").max())
     driver_data = dataset.loc[pd.to_numeric(dataset["driver_number"], errors="coerce") == driver_number]
     try:
-        what_if = _what_ifs((race_folder, int(session_key)), driver_number, model, driver_data, current_lap, race_last_lap)
+        what_if = _what_ifs((race_folder, int(session_key)), driver_number, trained, feature_rows,
+                            driver_data, current_lap, race_last_lap)
     except (ValueError, KeyError, TypeError) as error:
         what_if = {"analyses": [], "actual_segments": [], "error": str(error)}
     what_if["race_last_lap"] = race_last_lap
@@ -155,7 +177,7 @@ def compute_strategy(race_folder, session_key, driver_number, current_lap):
     if current_lap >= race_last_lap - 1:
         return _message("A verseny végéhez közel már nincs értelmezhető jövőbeli bokszkör.", what_if=what_if)
     try:
-        state_row, state, results = _evaluate_from(model, driver_data, current_lap, race_last_lap)
+        state_row, state, predictor, results = _evaluate_from(trained, feature_rows, driver_data, current_lap, race_last_lap)
         if isinstance(results, str):
             return _message(results, what_if=what_if)
         recommendation = advisor.recommend(results)
@@ -165,7 +187,7 @@ def compute_strategy(race_folder, session_key, driver_number, current_lap):
         lap_numbers = pd.to_numeric(driver_data["lap_number"], errors="coerce")
         stint_rows = driver_data.loc[(driver_data["stint_number"] == stint) & (lap_numbers <= current_lap)]
         observed = advisor.observed_dropoff(stint_rows, model, compound)
-        pace = advisor.compound_pace(model, state)
+        pace = advisor.compound_pace(predictor, state)
     except (ValueError, KeyError, TypeError) as error:
         return _message(f"A stratégia nem számítható ki: {error}", what_if=what_if)
 
@@ -176,6 +198,8 @@ def compute_strategy(race_folder, session_key, driver_number, current_lap):
         "race_last_lap": race_last_lap,
         "training_races": len(trained.training_races),
         "last_training_race": trained.training_races[-1],
+        # XGBoost minus structured estimate for the next lap (s); None: not anchored.
+        "anchor_offset": float(predictor.offset) if hasattr(predictor, "offset") else None,
         "best": {
             "plan": recommendation.best["plan"],
             "pit_laps": list(best.pit_laps),

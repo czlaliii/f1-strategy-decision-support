@@ -123,6 +123,7 @@ stack-data==0.6.3
 terminado==0.18.1
 threadpoolctl==3.7.0
 tinycss2==1.5.1
+torch==2.14.1
 tornado==6.5.10
 traitlets==5.16.1
 typing-inspection==0.4.4
@@ -136,4 +137,5 @@ webencodings==0.6.1
 websocket-client==1.9.2
 Werkzeug==3.1.9
 widgetsnbextension==4.0.16
+xgboost==3.2.0
 zipp==4.1.1

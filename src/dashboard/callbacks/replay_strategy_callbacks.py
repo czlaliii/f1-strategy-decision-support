@@ -305,6 +305,8 @@ def _render(result, driver):
         f"a modell {result['training_races']} korábbi versenyen tanult "
         f"(utolsó: {result['last_training_race']})."
     )
+    if result.get("anchor_offset") is not None:
+        message += f" XGBoost-horgony: {result['anchor_offset']:+.2f} s (10 kör felezési idő)."
     return (
         message,
         _summary_tiles(result),

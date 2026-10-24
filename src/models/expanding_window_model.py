@@ -9,6 +9,8 @@ The strategy model is a structured hybrid:
   absorb the tyre effect.
 - Fuel: the same regression estimates the per-lap fuel effect; the simulator
   lowers field_pace_ref by it each lap.
+- An XGBoost next-lap model is trained on the same races; the strategy
+  worker uses it to anchor the simulated pace (lap_time_models.AnchoredLapTimeModel).
 It does not use the previous lap time, so a pit stop changes the prediction
 through the compound and tyre age instead of being masked by old-tyre pace.
 
@@ -42,7 +44,7 @@ from src.features.race_dataset import (
 from src.simulator.race_simulator import MODEL_FEATURES
 
 MODEL_DIR = PROCESSED_ROOT / "expanding_window_models"
-MODEL_VERSION = 4
+MODEL_VERSION = 5
 TARGET = "next_lap_time"
 REFERENCE = "field_pace_ref"
 # Laps over 200 s likely include stoppages or restarts.
@@ -81,6 +83,8 @@ class TrainedModel:
     training_rows: int
     # Typical tyre life in laps per dry compound, from the training races.
     tyre_life_laps: dict
+    # Next-lap XGBoost model on the same races; anchors the simulation pace.
+    xgboost: object = None
 
 
 def estimate_tyre_and_fuel_effects(rows: pd.DataFrame) -> dict[str, float]:
@@ -270,35 +274,46 @@ def typical_tyre_life(train: pd.DataFrame) -> dict[str, float]:
 
 
 def train_model(race_folder: str) -> TrainedModel:
-    """Fit the strategy model on all usable races before the selected race."""
+    """Fit the strategy model and the XGBoost next-lap model on races before the selected race."""
+    # Imported here: lap_time_models imports this module.
+    from src.models.lap_time_models import fit_xgboost, load_history
+
     train, used = load_training_data(race_folder)
     model = fit_strategy_model(train)
+    history, history_races = load_history(race_folder)
     return TrainedModel(
-        model, tuple(used), int(len(racing_target_rows(train))), typical_tyre_life(train)
+        model, tuple(used), int(len(racing_target_rows(train))), typical_tyre_life(train),
+        fit_xgboost(history, history_races),
     )
 
 
 def load_or_train_model(race_folder: str, retrain: bool = False) -> TrainedModel:
-    """Load the cached model for this race, training it on first use."""
+    """Load the cached models for this race, training them on first use."""
+    import xgboost
+
     model_path = MODEL_DIR / f"{race_folder}.joblib"
+    xgboost_path = MODEL_DIR / f"{race_folder}.xgb.joblib"
     meta_path = MODEL_DIR / f"{race_folder}.json"
-    if model_path.exists() and meta_path.exists() and not retrain:
+    if model_path.exists() and xgboost_path.exists() and meta_path.exists() and not retrain:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if (
             meta.get("model_version") == MODEL_VERSION
             and meta.get("dataset_version") == DATASET_VERSION
             and meta.get("sklearn_version") == sklearn.__version__
+            and meta.get("xgboost_version") == xgboost.__version__
         ):
             return TrainedModel(
                 joblib.load(model_path),
                 tuple(meta["training_races"]),
                 int(meta["training_rows"]),
                 meta["tyre_life_laps"],
+                joblib.load(xgboost_path),
             )
 
     model = train_model(race_folder)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(model.pipeline, model_path)
+    joblib.dump(model.xgboost, xgboost_path)
     meta_path.write_text(json.dumps({
         "race": race_folder,
         "training_races": list(model.training_races),
@@ -307,6 +322,7 @@ def load_or_train_model(race_folder: str, retrain: bool = False) -> TrainedModel
         "model_version": MODEL_VERSION,
         "dataset_version": DATASET_VERSION,
         "sklearn_version": sklearn.__version__,
+        "xgboost_version": xgboost.__version__,
         "features": STRATEGY_FEATURES,
     }, indent=2), encoding="utf-8")
     return model
