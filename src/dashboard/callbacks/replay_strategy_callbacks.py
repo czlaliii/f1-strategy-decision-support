@@ -42,7 +42,100 @@ def _empty_outputs(message, what_if=None):
         _empty_figure(),
         [],
         _what_if_section(what_if),
+        None,
     )
+
+
+# Rejoining closer than this behind another car means driving in its dirty air.
+DIRTY_AIR_SECONDS = 1.5
+
+
+def _gap_text(seconds):
+    return f"{seconds:+.1f} s".replace(".", ",")
+
+
+def _scenario_rows(rows, label, good_when_negative=True):
+    """One line per response lap: the gap after both stops, green when it favours the selected driver."""
+    items = []
+    for row in rows:
+        favourable = (row["gap_after"] < 0) == good_when_negative
+        items.append(html.Div(
+            [html.Span(label(row["response"]), className="battle-response"),
+             html.Span(_gap_text(row["gap_after"]), className="battle-gap " + ("is-good" if favourable else "is-bad"))],
+            className="battle-row",
+        ))
+    return items
+
+
+def _battle_card(title, rival, body, gap_sign=1):
+    """gap_sign: +1 for the car ahead (we are behind it), -1 for the car behind."""
+    head = [html.Div(title, className="kpi-label")]
+    if rival:
+        head.append(html.Div([
+            html.Span(rival["driver"], className="battle-driver"),
+            html.Span(_gap_text(gap_sign * rival["gap"]), className="battle-current-gap"),
+            _compound_pill(rival["compound"]),
+            html.Span(f"{int(rival['tyre_age'])} kör", className="battle-age"),
+        ], className="battle-head"))
+    return html.Div(head + body, className="battle-card")
+
+
+def _pit_battle_section(battle):
+    if not battle:
+        return None
+    cards = []
+    ahead, behind = battle.get("ahead"), battle.get("behind")
+    if ahead:
+        if ahead.get("note"):
+            body = [html.Div(ahead["note"], className="battle-note")]
+        else:
+            body = [
+                html.Div("UNDERCUT · te állsz ki a következő körben", className="battle-sub"),
+                html.Div(ahead["undercut_verdict"], className="battle-verdict"),
+                *_scenario_rows(ahead["undercut"], lambda r: f"{ahead['driver']} {r} körrel később áll ki"),
+                html.Div("OVERCUT · ő áll ki előbb, te kint maradsz", className="battle-sub mt-2"),
+                html.Div(ahead["overcut_verdict"], className="battle-verdict"),
+                *_scenario_rows(ahead["overcut"], lambda r: f"te {r} körrel később állsz ki"),
+            ]
+        cards.append(_battle_card("ELŐTTED", ahead, body))
+    if behind:
+        if behind.get("note"):
+            body = [html.Div(behind["note"], className="battle-note")]
+        else:
+            body = [
+                html.Div(f"VÉDEKEZÉS · {behind['driver']} undercutot próbál", className="battle-sub"),
+                html.Div(behind["threat_verdict"], className="battle-verdict"),
+                # Here the chaser is the car behind: a negative gap means it got past.
+                *_scenario_rows(behind["threat"], lambda r: f"te {r} körrel később reagálsz", good_when_negative=False),
+            ]
+        cards.append(_battle_card("MÖGÖTTED", behind, body, gap_sign=-1))
+    rejoin = battle.get("rejoin")
+    if rejoin:
+        lines = [html.Div(f"P{rejoin['position']}", className="battle-rejoin-position")]
+        if rejoin["ahead"]:
+            traffic = rejoin["gap_ahead"] < DIRTY_AIR_SECONDS
+            lines.append(html.Div(
+                f"{rejoin['ahead']} mögött {rejoin['gap_ahead']:.1f} s-mal".replace(".", ",")
+                + (" · forgalom / koszos levegő" if traffic else ""),
+                className="battle-row-text" + (" is-bad" if traffic else ""),
+            ))
+        if rejoin["behind"]:
+            lines.append(html.Div(f"{rejoin['behind']} előtt {rejoin['gap_behind']:.1f} s-mal".replace(".", ","),
+                                  className="battle-row-text"))
+        cards.append(_battle_card("KIÁLLÁS MOST · VÁRHATÓ VISSZATÉRÉS", None, lines + [html.Div(
+            f"{battle['pit_loss']:.0f} s boxutca-veszteséggel, ha más nem áll ki.", className="battle-note")]))
+    header = [html.Div("UNDERCUT / OVERCUT · A KÖZVETLEN RIVÁLISOK ELLEN", className="kpi-label mb-2")]
+    if battle.get("note"):
+        header.append(html.Div(battle["note"], className="battle-note mb-2"))
+    return html.Div([
+        *header,
+        html.Div(cards, className="battle-grid"),
+        html.Div(
+            "Rés mindkét kiállás után, a későbbi kiállást követő kör végén (negatív = előtte vagy). Mindkét autó a "
+            "saját modelljével és a saját legjobb tervének következő keverékével szimulálva; a forgalmat nem modellezi.",
+            className="text-muted small mt-2",
+        ),
+    ])
 
 
 def _compound_pill(compound):
@@ -311,6 +404,7 @@ def _render(result, driver):
         _dropoff_figure(result),
         _compound_rows(result),
         _what_if_section(result.get("what_if")),
+        _pit_battle_section(result.get("pit_battle")),
     )
 
 
@@ -375,6 +469,7 @@ def register_replay_strategy_callbacks(app):
         Output("live-pace-dropoff", "figure"),
         Output("live-compound-table", "data"),
         Output("live-what-if", "children"),
+        Output("live-pit-battle", "children"),
         Output("live-strategy-state", "data"),
         Input("strategy-poll", "n_intervals"),
         Input("strategy-request", "data"),
@@ -382,7 +477,7 @@ def register_replay_strategy_callbacks(app):
     )
     def render_strategy(_, request, view_state):
         """Cheap: shows a pending note while the worker runs, then the finished result."""
-        unchanged = (no_update,) * 8
+        unchanged = (no_update,) * 9
         if not request:
             return unchanged
         view_state = view_state or {}
@@ -398,5 +493,5 @@ def register_replay_strategy_callbacks(app):
                 return unchanged
             note = f"{request['driver']} · {request['lap']}. kör · számítás folyamatban…"
             # Keep the previous recommendation visible until the new one is ready.
-            return (note, *(no_update,) * 6, {**view_state, "pending": key})
+            return (note, *(no_update,) * 7, {**view_state, "pending": key})
         return (*_render(result, request["driver"]), {"rendered": key})

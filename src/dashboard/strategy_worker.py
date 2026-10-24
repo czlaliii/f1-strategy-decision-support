@@ -7,16 +7,21 @@ worker's memory between laps.
 Simulations use the structured model anchored to the XGBoost next-lap
 estimate at the decision lap (see lap_time_models.AnchoredLapTimeModel).
 """
+import json
+from functools import lru_cache
+
+import numpy as np
 import pandas as pd
 
 from src.dashboard.config import PIT_LOSS_SECONDS
-from src.features.race_dataset import RaceDataError, load_race_dataset
+from src.features.race_dataset import RAW_ROOT, RaceDataError, load_race_dataset
 from src.models.expanding_window_model import (
     InsufficientHistoryError,
     fill_with_training_medians,
     load_or_train_model,
 )
 from src.models.lap_time_models import add_model_features, anchored_model
+from src.simulator import pit_battle
 from src.simulator import strategy_advisor as advisor
 
 # Per-race dataset, trained models and XGBoost feature rows, kept in the worker's memory.
@@ -157,6 +162,101 @@ def _what_ifs(race_key, driver_number, trained, feature_rows, driver_data, curre
     return {"analyses": analyses, "actual_segments": _actual_segments(driver_data, current_lap)}
 
 
+@lru_cache(maxsize=8)
+def _driver_names(race_folder, session_key):
+    """Driver number -> three-letter acronym."""
+    drivers = json.loads((RAW_ROOT / race_folder / "drivers.json").read_text(encoding="utf-8"))
+    return {
+        int(d["driver_number"]): str(d.get("name_acronym") or d["driver_number"])
+        for d in drivers if d.get("session_key") == int(session_key)
+    }
+
+
+def _next_compound(results):
+    """Compound of the next stop in the best strategy; None if the best strategy has no more stops.
+
+    Undercut and overcut only apply to cars that still have to stop.
+    """
+    best = results.sort_values("remaining_time").iloc[0]["strategy"]
+    return best.compounds[1] if best.pit_laps else None
+
+
+def _rival_car(trained, feature_rows, dataset, number, name, lap, race_last_lap):
+    """pit_battle.Car for another driver at the end of `lap`, or (None, reason)."""
+    data = dataset.loc[pd.to_numeric(dataset["driver_number"], errors="coerce") == number]
+    _, state, predictor, results = _evaluate_from(trained, feature_rows, data, lap, race_last_lap)
+    if isinstance(results, str):
+        return None, results
+    compound = _next_compound(results)
+    if compound is None:
+        return None, f"A modell szerint {name} már nem áll ki: csak a pályán előzhető."
+    return pit_battle.Car(name, predictor, dict(state), compound), None
+
+
+def _rival_block(kind, row, gap, own_car, trained, feature_rows, dataset, names, lap, race_last_lap):
+    number = int(row["driver_number"])
+    block = {"driver": names.get(number, str(number)), "gap": float(gap), "tyre_age": float(row["tyre_age"]),
+             "compound": str(row["compound"]).upper()}
+    if bool(row.get("pit_stop")):
+        return {**block, "note": f"{block['driver']} ebben a körben kiállt."}
+    if row["tyre_age"] < pit_battle.MIN_TYRE_AGE:
+        return {**block, "note": f"{block['driver']} nemrég állt ki, friss gumin van."}
+    rival, reason = _rival_car(trained, feature_rows, dataset, number, block["driver"], lap, race_last_lap)
+    if rival is None:
+        return {**block, "note": reason}
+    block["next_compound"] = rival.next_compound
+    if kind == "ahead":
+        block["undercut"] = pit_battle.undercut(own_car, rival, gap, lap, race_last_lap, PIT_LOSS_SECONDS)
+        block["overcut"] = pit_battle.overcut(own_car, rival, gap, lap, race_last_lap, PIT_LOSS_SECONDS)
+        block["undercut_verdict"] = pit_battle.verdict(block["undercut"])
+        block["overcut_verdict"] = pit_battle.verdict(block["overcut"])
+    else:
+        block["threat"] = pit_battle.undercut_threat(own_car, rival, gap, lap, race_last_lap, PIT_LOSS_SECONDS)
+        block["threat_verdict"] = pit_battle.verdict(block["threat"], attacking=False)
+    return block
+
+
+def _pit_battle(dataset, trained, feature_rows, race_folder, session_key, driver_number, lap, race_last_lap,
+                state, predictor, results):
+    """Undercut/overcut against the cars directly ahead and behind, and the rejoin place after a stop now."""
+    names = _driver_names(race_folder, int(session_key))
+    rows = dataset.loc[pd.to_numeric(dataset["lap_number"], errors="coerce") == lap].copy()
+    rows["gap_to_leader"] = pd.to_numeric(rows["gap_to_leader"], errors="coerce")
+    # Cars on the lead lap with a known gap; lapped cars are not direct rivals.
+    rows = rows[(pd.to_numeric(rows["laps_down"], errors="coerce").fillna(0) == 0) & rows["gap_to_leader"].notna()]
+    rows = rows.sort_values("gap_to_leader")
+    own = rows.loc[pd.to_numeric(rows["driver_number"], errors="coerce") == driver_number]
+    if own.empty:
+        return {"note": "Ehhez a körhöz nincs időkülönbség-adat."}
+    own_gap = float(own["gap_to_leader"].iloc[0])
+    gaps = {names.get(int(n), str(n)): float(g) for n, g in zip(rows["driver_number"], rows["gap_to_leader"])}
+    own_name = names.get(int(driver_number), str(driver_number))
+    battle = {"rejoin": pit_battle.rejoin_position(gaps, own_name, PIT_LOSS_SECONDS), "pit_loss": PIT_LOSS_SECONDS}
+    if bool(own["pit_stop"].iloc[0]):
+        battle["note"] = "Ebben a körben kiállsz: a következő körtől számolható újra."
+        return battle
+    if float(state["tyre_age"]) < pit_battle.MIN_TYRE_AGE:
+        battle["note"] = "Most álltál ki: friss gumin nincs értelmezhető undercut vagy overcut."
+        return battle
+    compound = _next_compound(results)
+    if compound is None:
+        battle["note"] = "A javasolt terv szerint nincs több kiállás, így nincs undercut- vagy overcut-helyzet."
+        return battle
+    own_car = pit_battle.Car(own_name, predictor, dict(state), compound)
+    battle["next_compound"] = compound
+    ahead = rows[rows["gap_to_leader"] < own_gap]
+    behind = rows[rows["gap_to_leader"] > own_gap]
+    if not ahead.empty:
+        row = ahead.iloc[-1]
+        battle["ahead"] = _rival_block("ahead", row, own_gap - row["gap_to_leader"], own_car,
+                                       trained, feature_rows, dataset, names, lap, race_last_lap)
+    if not behind.empty:
+        row = behind.iloc[0]
+        battle["behind"] = _rival_block("behind", row, row["gap_to_leader"] - own_gap, own_car,
+                                        trained, feature_rows, dataset, names, lap, race_last_lap)
+    return battle
+
+
 def compute_strategy(race_folder, session_key, driver_number, current_lap):
     """Recommendation, tyre insights and what-if analyses for one driver at the end of current_lap."""
     try:
@@ -190,6 +290,11 @@ def compute_strategy(race_folder, session_key, driver_number, current_lap):
         pace = advisor.compound_pace(predictor, state)
     except (ValueError, KeyError, TypeError) as error:
         return _message(f"A stratégia nem számítható ki: {error}", what_if=what_if)
+    try:
+        battle = _pit_battle(dataset, trained, feature_rows, race_folder, session_key, driver_number,
+                             current_lap, race_last_lap, state, predictor, results)
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        battle = {"note": f"Az undercut/overcut nem számítható ki: {error}"}
 
     best = recommendation.best["strategy"]
     return {
@@ -224,4 +329,5 @@ def compute_strategy(race_folder, session_key, driver_number, current_lap):
         },
         "pace": pace.astype({"tyre_age": int}).to_dict("records"),
         "what_if": what_if,
+        "pit_battle": battle,
     }

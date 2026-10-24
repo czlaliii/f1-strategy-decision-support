@@ -258,6 +258,8 @@ def _strategy_panel():
                 "A rendszer a replay aktuális körének állapotából újraszámolja a 0, 1 és 2 kiállásos terveket a kétkeverékes szabály figyelembevételével. Ez történeti adatokra épülő modellbecslés, nem valós idejű csapatutasítás.",
                 className="text-muted small mb-3",
             ),
+            # Undercut / overcut against the cars directly ahead and behind.
+            html.Div(id="live-pit-battle", className="mb-3"),
             # What-if: each completed pit stop versus the model's plan from a few laps before.
             html.Div(id="live-what-if", className="mb-3"),
             dbc.Row(

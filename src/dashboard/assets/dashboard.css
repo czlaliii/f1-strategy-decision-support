@@ -260,3 +260,21 @@ body {
 .planned-badge { float: right; padding: .05rem .45rem; border: 1px solid var(--muted); border-radius: 999px; color: var(--muted); font-size: .6rem; letter-spacing: .08em; }
 .planned-method { margin-bottom: .4rem; color: #fff; font-weight: 800; }
 .planned-text { margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.55; }
+
+/* --- Undercut / overcut cards (strategy tab) --- */
+.battle-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
+.battle-card { min-width: 0; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--surface-raised); }
+.battle-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin: .35rem 0 .5rem; }
+.battle-driver { color: #fff; font-size: 1.15rem; font-weight: 900; letter-spacing: .03em; }
+.battle-current-gap, .battle-age { color: var(--muted); font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.battle-sub { margin-top: .2rem; color: var(--muted); font-size: .64rem; font-weight: 850; letter-spacing: .08em; }
+.battle-verdict { margin: .2rem 0 .3rem; color: #fff; font-size: .86rem; font-weight: 700; }
+.battle-row { display: flex; justify-content: space-between; gap: .5rem; padding: .2rem 0; border-bottom: 1px dashed var(--line); font-size: .8rem; }
+.battle-response { color: var(--muted); }
+.battle-gap { font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.battle-gap.is-good, .battle-row-text.is-good { color: #4ee08a; }
+.battle-gap.is-bad, .battle-row-text.is-bad { color: #ff6b5e; }
+.battle-rejoin-position { margin: .3rem 0; color: #fff; font-size: 1.6rem; font-weight: 900; }
+.battle-row-text { color: var(--ink); font-size: .84rem; }
+.battle-note { color: var(--muted); font-size: .82rem; }
+@media (max-width: 1199px) { .battle-grid { grid-template-columns: 1fr; } }
