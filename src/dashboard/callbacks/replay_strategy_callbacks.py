@@ -34,7 +34,7 @@ def _empty_figure(message=""):
     return figure
 
 
-def _empty_outputs(message):
+def _empty_outputs(message, what_if=None):
     return (
         message,
         html.Div("Nincs még kiszámítható ajánlás.", className="text-muted"),
@@ -42,6 +42,7 @@ def _empty_outputs(message):
         "",
         _empty_figure(),
         [],
+        _what_if_section(what_if),
     )
 
 
@@ -192,9 +193,109 @@ def _compound_rows(result):
     ]
 
 
+# Delta (s) up to which an actual stop counts as matching / close to the model's plan.
+WHAT_IF_MATCH_SECONDS = 0.5
+WHAT_IF_CLOSE_SECONDS = 3.0
+
+
+def _stint_bar(segments, race_last_lap, decision_lap=None, until_lap=None):
+    """Horizontal stint bar: one coloured block per stint, scaled to race distance."""
+    blocks = []
+    for segment in segments:
+        laps = segment["end"] - segment["start"] + 1
+        width = 100 * laps / race_last_lap
+        compound = segment["compound"]
+        blocks.append(html.Div(
+            COMPOUND_NAMES.get(compound, compound)[:1] if width >= 4 else "",
+            className="stint-seg",
+            title=f"{COMPOUND_NAMES.get(compound, compound)} · {segment['start']}–{segment['end']}. kör",
+            style={"width": f"{width}%", "backgroundColor": COMPOUND_COLORS.get(compound, "#697586")},
+        ))
+    if until_lap is not None and until_lap < race_last_lap:
+        # Laps not yet driven in the replay.
+        blocks.append(html.Div(className="stint-seg stint-seg-future",
+                               style={"width": f"{100 * (race_last_lap - until_lap) / race_last_lap}%"}))
+    markers = []
+    if decision_lap is not None:
+        markers.append(html.Div(className="stint-decision", title=f"Döntési pont: {decision_lap}. kör",
+                                style={"left": f"{100 * decision_lap / race_last_lap}%"}))
+    return html.Div([html.Div(blocks, className="stint-bar"), *markers], className="stint-bar-wrap")
+
+
+def _what_if_card(index, analysis, actual_segments, race_last_lap, current_lap):
+    stop = f"{analysis['stop_lap']}. kör · {COMPOUND_NAMES.get(analysis['from'], analysis['from'])} → {COMPOUND_NAMES.get(analysis['to'], analysis['to'])}"
+    head = [html.Span(f"{index}. KIÁLLÁS", className="kpi-label"), html.Span(stop, className="what-if-stop")]
+    if analysis["status"] != "ok":
+        return html.Div([html.Div(head, className="what-if-head"),
+                         html.Div(analysis["reason"], className="text-muted small")], className="what-if-card")
+
+    delta = analysis["delta"]
+    if delta is None:
+        chip, tone = "A valós kiállás kívül esett a szimulált lehetőségeken", "neutral"
+    elif delta <= WHAT_IF_MATCH_SECONDS:
+        chip, tone = f"Közel optimális döntés · {delta:.1f} s", "good"
+    else:
+        chip = f"A modell terve {delta:.1f} s-mal gyorsabb lett volna a célig"
+        tone = "warn" if delta <= WHAT_IF_CLOSE_SECONDS else "bad"
+    head.append(html.Span(chip, className=f"what-if-chip what-if-chip-{tone}"))
+
+    model_stops = " → ".join(COMPOUND_NAMES.get(c, c) for c in analysis["model_compounds"])
+    window = analysis["model_window"]
+    model_text = (
+        f"{_laps_text(analysis['model_pit_laps'])} kör · {model_stops}"
+        + (f" · ablak {window[0]}–{window[1]}." if window else "")
+        if analysis["model_pit_laps"] else f"Nincs kiállás · {model_stops}"
+    )
+    return html.Div(
+        [
+            html.Div(head, className="what-if-head"),
+            html.Div([html.Div("Valós", className="what-if-row-label"),
+                      _stint_bar(actual_segments, race_last_lap, until_lap=current_lap)], className="what-if-row"),
+            html.Div([html.Div("Modell", className="what-if-row-label"),
+                      _stint_bar(analysis["model_segments"], race_last_lap, decision_lap=analysis["decision_lap"])],
+                     className="what-if-row"),
+            html.Div(
+                [
+                    html.Div([html.Div("Valós döntés", className="kpi-label"), html.Div(stop, className="what-if-value")]),
+                    html.Div([html.Div(f"Modell javaslata · a {analysis['decision_lap']}. kör állapotából", className="kpi-label"),
+                              html.Div(model_text, className="what-if-value")]),
+                ],
+                className="what-if-compare",
+            ),
+        ],
+        className="what-if-card",
+    )
+
+
+def _what_if_section(what_if):
+    if not what_if:
+        return ""
+    analyses = what_if.get("analyses", [])
+    title = html.Div("MI LETT VOLNA, HA… · VALÓS KIÁLLÁS KONTRA MODELLJAVASLAT", className="kpi-label mb-2")
+    if not analyses:
+        return html.Div([title, html.Div(
+            "A versenyző még nem állt ki; az összevetés az első kiállás után jelenik meg.",
+            className="text-muted small",
+        )])
+    race_last_lap = what_if["race_last_lap"]
+    current_lap = max((s["end"] for s in what_if["actual_segments"]), default=0)
+    cards = [
+        _what_if_card(index, analysis, what_if["actual_segments"], race_last_lap, current_lap)
+        for index, analysis in enumerate(analyses, start=1)
+    ]
+    legend = html.Div(
+        [html.Span([html.Span(className="legend-dot", style={"backgroundColor": COMPOUND_COLORS[c]}), COMPOUND_NAMES[c]],
+                   className="me-3") for c in SUPPORTED_COMPOUNDS]
+        + [html.Span([html.Span(className="legend-decision"), "döntési pont"])],
+        className="what-if-legend",
+    )
+    # Latest stop first: it is the one the replay has just shown.
+    return html.Div([title, *reversed(cards), legend])
+
+
 def _render(result, driver):
     if result.get("status") != "ok":
-        return _empty_outputs(result.get("message", "Nincs még kiszámítható ajánlás."))
+        return _empty_outputs(result.get("message", "Nincs még kiszámítható ajánlás."), result.get("what_if"))
     message = (
         f"{driver} · aktuális kör: {result['current_lap']}/{result['race_last_lap']} · "
         f"a modell {result['training_races']} korábbi versenyen tanult "
@@ -207,6 +308,7 @@ def _render(result, driver):
         _tyre_status(result["tyre"]),
         _dropoff_figure(result),
         _compound_rows(result),
+        _what_if_section(result.get("what_if")),
     )
 
 
@@ -270,6 +372,7 @@ def register_replay_strategy_callbacks(app):
         Output("live-tyre-status", "children"),
         Output("live-pace-dropoff", "figure"),
         Output("live-compound-table", "data"),
+        Output("live-what-if", "children"),
         Output("live-strategy-state", "data"),
         Input("strategy-poll", "n_intervals"),
         Input("strategy-request", "data"),
@@ -277,7 +380,7 @@ def register_replay_strategy_callbacks(app):
     )
     def render_strategy(_, request, view_state):
         """Cheap: shows a pending note while the worker runs, then the finished result."""
-        unchanged = (no_update,) * 7
+        unchanged = (no_update,) * 8
         if not request:
             return unchanged
         view_state = view_state or {}
@@ -293,5 +396,5 @@ def register_replay_strategy_callbacks(app):
                 return unchanged
             note = f"{request['driver']} · {request['lap']}. kör · számítás folyamatban…"
             # Keep the previous recommendation visible until the new one is ready.
-            return (note, *(no_update,) * 5, {**view_state, "pending": key})
+            return (note, *(no_update,) * 6, {**view_state, "pending": key})
         return (*_render(result, request["driver"]), {"rendered": key})

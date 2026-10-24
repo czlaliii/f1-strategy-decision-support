@@ -86,6 +86,30 @@ def session_selector_layout(years):
                         ],
                     ),
                     html.Div(id="calendar-message", className="inline-status mt-3"),
+                    dbc.Row(
+                        className="g-3 mt-1 align-items-center",
+                        children=[
+                            dbc.Col(
+                                dbc.Button(
+                                    [html.Span("↓", className="button-symbol"), " Session betöltése"],
+                                    id="load-replay",
+                                    n_clicks=0,
+                                    color="danger",
+                                    className="primary-action",
+                                ),
+                                width="auto",
+                            ),
+                            dbc.Col(
+                                # Loading can take a while; the spinner shows until the message updates.
+                                dcc.Loading(
+                                    html.Div(id="replay-message", className="inline-status"),
+                                    type="circle",
+                                    color="#d62839",
+                                ),
+                                width=True,
+                            ),
+                        ],
+                    ),
                 ]
             ),
         ],

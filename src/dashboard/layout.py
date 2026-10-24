@@ -2,12 +2,12 @@
 import dash_bootstrap_components as dbc
 from dash import html
 
+from src.dashboard.components.grid_layout import grid_layout
 from src.dashboard.components.replay_layout import replay_layout
 from src.dashboard.components.session_selector import session_selector_layout
-from src.dashboard.components.strategy_layout import strategy_layout
 
 
-def build_layout(years, drivers, race_last_lap):
+def build_layout(years):
     """Build the top-level page without changing any callback component IDs."""
     return dbc.Container(
         fluid=True,
@@ -35,8 +35,8 @@ def build_layout(years, drivers, race_last_lap):
                 className="dashboard-sections",
                 children=[
                     session_selector_layout(years),
-                    strategy_layout(drivers, race_last_lap),
                     replay_layout(),
+                    grid_layout(),
                 ],
             ),
             html.Footer(

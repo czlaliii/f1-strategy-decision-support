@@ -502,6 +502,16 @@ def register_replay_callbacks(app):
         )
 
     @app.callback(
+        Output("replay-view", "style"),
+        Output("grid-view", "style"),
+        Input("replay-data-store", "data"),
+    )
+    def show_replay_view(data):
+        """The replay and grid sections appear once a session has been loaded."""
+        style = {"display": "block"} if (data or {}).get("replay_id") else {"display": "none"}
+        return style, style
+
+    @app.callback(
         Output("replay-track", "figure"),
         Input("replay-data-store", "data"),
     )

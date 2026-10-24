@@ -9,19 +9,6 @@ from src.dashboard.config import SESSION_CODES
 def register_session_callbacks(app):
 
     @app.callback(
-        Output("race-view", "style"),
-        Output("replay-view", "style"),
-        Input("session-name", "value"),
-    )
-    def switch_session_view(session_name):
-        return (
-            {"display": "block"}
-            if session_name == "R"
-            else {"display": "none"},
-            {"display": "block"},
-        )
-
-    @app.callback(
         Output("event-name", "options"),
         Output("event-name", "value"),
         Output("calendar-message", "children"),

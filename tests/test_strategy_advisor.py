@@ -70,3 +70,39 @@ def test_tyre_wear_and_compound_pace():
     assert current["set"] == "Jelenlegi szett" and current["delta_to_current"] == 0
     new_soft = pace[pace["set"] == "Új SOFT"].iloc[0]
     assert np.isclose(new_soft["lap_time"], 80.0 - 0.5 + 0.1)
+
+
+def test_actual_pit_stops_and_decision_lap():
+    rows = pd.DataFrame({
+        "lap_number": range(1, 11),
+        "stint_number": [1, 1, 1, 2, 2, 2, 2, 3, 3, 3],
+        "compound": ["MEDIUM"] * 3 + ["HARD"] * 4 + ["SOFT"] * 3,
+    })
+    stops = advisor.actual_pit_stops(rows)
+    assert stops == [
+        {"lap": 3, "from": "MEDIUM", "to": "HARD", "stint": 2},
+        {"lap": 7, "from": "HARD", "to": "SOFT", "stint": 3},
+    ]
+    assert advisor.decision_lap(31, None) == 26
+    # Never before the previous stop and never on the stop lap itself.
+    assert advisor.decision_lap(7, 3) == 4
+    assert advisor.decision_lap(3, None) == 2
+
+
+def test_what_if_compares_actual_stop_with_best_plan():
+    model = TyreModel()
+    candidates = advisor.candidate_strategies(10, 30, "MEDIUM", {"MEDIUM"})
+    results = advisor.evaluate_strategies(model, state(), candidates, 30, pit_loss_seconds=20.0)
+    best = advisor.recommend(results).best
+    actual = advisor.best_matching_first_stop(results, 12, "HARD")
+    assert actual["strategy"].pit_laps[0] == 12 and actual["strategy"].compounds[1] == "HARD"
+    assert actual["remaining_time"] >= best["remaining_time"]
+    assert advisor.best_matching_first_stop(results, 99, "HARD") is None
+
+
+def test_stint_segments_follow_pit_laps():
+    assert advisor.stint_segments(1, 70, ("MEDIUM", "HARD"), (35,)) == [
+        {"start": 1, "end": 35, "compound": "MEDIUM"},
+        {"start": 36, "end": 70, "compound": "HARD"},
+    ]
+    assert advisor.stint_segments(18, 70, ("HARD",), ()) == [{"start": 18, "end": 70, "compound": "HARD"}]

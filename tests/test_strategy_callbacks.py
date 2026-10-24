@@ -60,13 +60,13 @@ def test_render_shows_pending_then_result_once(app):
 
     pending = render(0, request, {"rendered": "old"})
     assert "számítás folyamatban" in pending[0]
-    assert all(value is no_update for value in pending[1:6])
-    assert render(1, request, pending[6]) == (no_update,) * 7
+    assert all(value is no_update for value in pending[1:7])
+    assert render(1, request, pending[7]) == (no_update,) * 8
 
     results["k"] = (True, {"status": "message", "message": "kész"})
-    done = render(2, request, pending[6])
-    assert done[0] == "kész" and done[6] == {"rendered": "k"}
-    assert render(3, request, done[6]) == (no_update,) * 7
+    done = render(2, request, pending[7])
+    assert done[0] == "kész" and done[7] == {"rendered": "k"}
+    assert render(3, request, done[7]) == (no_update,) * 8
 
 
 def test_message_requests_render_immediately(app):
@@ -90,3 +90,22 @@ def test_worker_result_is_plain_data_and_matches_advisor():
     start, end = result["pit_window"]
     assert start <= result["best"]["pit_laps"][0] <= end
     assert callbacks._render(result, "NOR")[0].startswith("NOR · aktuális kör: 20/")
+
+
+@pytest.mark.skipif(not (RAW_ROOT / "hungarian_2025").exists(), reason="local race data not available")
+def test_what_if_for_completed_stop_only():
+    from src.dashboard import strategy_worker
+    from src.features.race_dataset import resolve_session_key
+
+    session_key = resolve_session_key("hungarian_2025")
+    # NOR pitted at the end of lap 31 (MEDIUM -> HARD).
+    before = strategy_worker.compute_strategy("hungarian_2025", session_key, 4, 31)
+    assert before["what_if"]["analyses"] == []
+    after = strategy_worker.compute_strategy("hungarian_2025", session_key, 4, 40)
+    (analysis,) = after["what_if"]["analyses"]
+    assert (analysis["stop_lap"], analysis["from"], analysis["to"]) == (31, "MEDIUM", "HARD")
+    assert analysis["decision_lap"] == 26 and analysis["delta"] >= 0
+    # Actual stints shown only up to the current lap.
+    assert after["what_if"]["actual_segments"][-1]["end"] == 40
+    section = str(callbacks._what_if_section(after["what_if"]))
+    assert "1. KIÁLLÁS" in section and "Modell javaslata" in section

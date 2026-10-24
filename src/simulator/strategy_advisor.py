@@ -143,3 +143,51 @@ def compound_pace(model, state: pd.Series) -> pd.DataFrame:
         "lap_time": predictions,
         "delta_to_current": predictions - current,
     })
+
+
+# Laps before an actual pit stop at which the "what if" comparison is made.
+DECISION_LEAD_LAPS = 5
+
+
+def actual_pit_stops(driver_rows: pd.DataFrame) -> list[dict]:
+    """Pit stops from the stint sequence: in-lap, old and new compound, new stint number."""
+    rows = driver_rows.dropna(subset=["stint_number"]).sort_values("lap_number")
+    stops = []
+    previous = None
+    for _, row in rows.iterrows():
+        if previous is not None and row["stint_number"] != previous["stint_number"]:
+            stops.append({
+                "lap": int(previous["lap_number"]),
+                "from": str(previous["compound"]).upper(),
+                "to": str(row["compound"]).upper(),
+                "stint": int(row["stint_number"]),
+            })
+        previous = row
+    return stops
+
+
+def decision_lap(stop_lap: int, previous_stop_lap: int | None) -> int:
+    """State lap for judging a stop: DECISION_LEAD_LAPS earlier, within the same stint."""
+    earliest = (previous_stop_lap + 1) if previous_stop_lap else 2
+    return max(min(stop_lap - DECISION_LEAD_LAPS, stop_lap - 1), earliest)
+
+
+def best_matching_first_stop(results: pd.DataFrame, lap: int, compound: str) -> pd.Series | None:
+    """Best simulated strategy whose first stop is on `lap` onto `compound`."""
+    matches = results[[
+        bool(s.pit_laps) and s.pit_laps[0] == lap and s.compounds[1] == compound
+        for s in results["strategy"]
+    ]]
+    if matches.empty:
+        return None
+    return matches.sort_values("remaining_time").iloc[0]
+
+
+def stint_segments(start_lap: int, end_lap: int, compounds, pit_laps) -> list[dict]:
+    """Stints of a plan as lap ranges; a stint ends on its pit (in-)lap."""
+    segments, first = [], start_lap
+    for compound, pit in zip(compounds, list(pit_laps) + [end_lap]):
+        if pit >= first:
+            segments.append({"start": first, "end": pit, "compound": compound})
+        first = pit + 1
+    return segments

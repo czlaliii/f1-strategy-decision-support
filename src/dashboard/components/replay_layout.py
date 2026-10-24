@@ -7,6 +7,7 @@ def replay_layout():
     return dbc.Card(
         id="replay-view",
         className="dashboard-card section-card mb-4",
+        # Hidden until a session is loaded (see show_replay_view).
         style={"display": "none"},
         children=[
             dcc.Store(id="replay-data-store"),
@@ -26,7 +27,7 @@ def replay_layout():
                         dbc.Col(
                             html.Div(
                                 [
-                                    html.Div("03", className="section-index"),
+                                    html.Div("02", className="section-index"),
                                     html.Div(
                                         [
                                             html.H2("Session-visszajátszás", className="section-title"),
@@ -41,24 +42,12 @@ def replay_layout():
                             ),
                             width=True,
                         ),
-                        dbc.Col(
-                            dbc.Button(
-                                [html.Span("↓", className="button-symbol"), " Session betöltése"],
-                                id="load-replay",
-                                n_clicks=0,
-                                color="dark",
-                                outline=True,
-                                className="secondary-action",
-                            ),
-                            width="auto",
-                        ),
                     ],
                     className="g-3",
                 ),
             ),
             dbc.CardBody(
                 children=[
-                    html.Div(id="replay-message", className="inline-status mb-3"),
                     dbc.Alert(id="replay-session-info", color="light", className="session-info-banner mb-3", children="Nincs betöltött session."),
                     dcc.Store(id="live-strategy-state", data={}),
                     # Strategy job queued for the worker process, and a poll for its result.
@@ -88,6 +77,8 @@ def replay_layout():
                                         "A rendszer a replay aktuális körének állapotából újraszámolja a 0, 1 és 2 kiállásos terveket a kétkeverékes szabály figyelembevételével. Ez történeti adatokra épülő modellbecslés, nem valós idejű csapatutasítás.",
                                         className="text-muted small mb-3",
                                     ),
+                                    # What-if: each completed pit stop versus the model's plan from a few laps before.
+                                    html.Div(id="live-what-if", className="mb-3"),
                                     dbc.Row(
                                         className="g-3",
                                         children=[

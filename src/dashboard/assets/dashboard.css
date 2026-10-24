@@ -116,3 +116,26 @@ body {
 .track-map .modebar { background: transparent !important; }
 .track-map .modebar-btn path { fill: #c9ced8 !important; }
 .track-map .modebar-btn:hover path { fill: #ffffff !important; }
+
+/* What-if: actual pit stop versus the model's plan */
+.what-if-card { margin-bottom: .75rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .75rem; background: #fbfcfd; }
+.what-if-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .7rem; }
+.what-if-stop { color: var(--ink); font-weight: 800; }
+.what-if-chip { margin-left: auto; padding: .2rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 750; }
+.what-if-chip-good { background: #e6f6ec; color: #17733a; }
+.what-if-chip-warn { background: #fff4d6; color: #8a5a00; }
+.what-if-chip-bad { background: #fde8ea; color: #a91f2d; }
+.what-if-chip-neutral { background: #eef1f5; color: var(--muted); }
+.what-if-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .45rem; }
+.what-if-row-label { flex: 0 0 3.6rem; color: var(--muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.stint-bar-wrap { position: relative; flex: 1 1 auto; }
+.stint-bar { display: flex; height: 1.35rem; overflow: hidden; border-radius: .45rem; background: #eef1f5; }
+.stint-seg { display: flex; align-items: center; justify-content: center; border-right: 2px solid #fff; color: #fff; font-size: .7rem; font-weight: 850; text-shadow: 0 1px 1px rgba(0, 0, 0, .3); }
+.stint-seg:last-child { border-right: 0; }
+.stint-seg-future { background: repeating-linear-gradient(45deg, #eef1f5, #eef1f5 6px, #e3e7ed 6px, #e3e7ed 12px) !important; }
+.stint-decision { position: absolute; top: -.25rem; bottom: -.25rem; width: 2px; background: var(--ink); }
+.what-if-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; margin-top: .6rem; }
+.what-if-value { margin-top: .2rem; color: var(--ink); font-size: .92rem; font-weight: 700; }
+.what-if-legend { display: flex; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: .76rem; }
+.legend-dot { display: inline-block; width: .7rem; height: .7rem; margin-right: .3rem; border-radius: 50%; vertical-align: -1px; }
+.legend-decision { display: inline-block; width: 2px; height: .8rem; margin-right: .35rem; background: var(--ink); vertical-align: -1px; }
